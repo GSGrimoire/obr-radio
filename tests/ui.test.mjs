@@ -17,7 +17,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { chromium } from "playwright";
 import { serve } from "./serve.mjs";
-import { STATE_KEY, LIBRARY_KEY, DNM_ROOM_KEY, CHANNEL } from "../radio.js";
+import { STATE_KEY, LIBRARY_KEY, DNM_ROOM_KEY, CHANNEL, parseTrackList } from "../radio.js";
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) pass++; else { fail++; console.log("  FAIL:", name); } };
@@ -56,7 +56,7 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const stage = path.join(repo, "out", "stub");
 fs.rmSync(stage, { recursive: true, force: true });
 fs.mkdirSync(stage, { recursive: true });
-for (const f of ["index.html", "bar.html", "panel.js", "bar.js", "radio.js", "style.css"]) {
+for (const f of ["index.html", "bar.html", "panel.js", "bar.js", "radio.js", "style.css", "suno.html", "suno-collect.js"]) {
   fs.copyFileSync(path.join(repo, f), path.join(stage, f));
 }
 fs.writeFileSync(path.join(stage, "sdk.js"), `
@@ -171,7 +171,7 @@ async function open(page, { file = "bar.html", role = "PLAYER", conn = "conn-sel
   // Short, so a page whose script died fails in seconds instead of hanging on
   // Playwright's thirty-second wait for a button that will never work.
   page.setDefaultTimeout(5000);
-  await page.route("https://cdn1.suno.ai/**", (route) => {
+  await page.route("https://cdn1.suno.ai/**", async (route) => {
     const url = route.request().url();
     const body = url.includes(U_SHORT) ? SHORT : url.includes(U_LONG) ? LONG : wav(3, 880);
     // Byte ranges, as a real CDN serves them. Without them Chromium cannot seek past
@@ -237,6 +237,7 @@ const sent = (page) => page.evaluate(() => window.__stub.st.sent);
   await sleep(600);
   a = await audioState(page);
   ok(`player: a GM tick corrects for the clock (${a.t.toFixed(1)}s)`, a.t > 63 && a.t < 69);
+  if (!(a.t > 63)) console.log("      DIAG", JSON.stringify(await page.evaluate(() => { const x = document.getElementById("music"); return { rs: x.readyState, seeking: x.seeking, paused: x.paused, dur: x.duration, buffered: x.buffered.length, t: x.currentTime }; })));
 
   // A player cannot set everyone's clock.
   await page.evaluate(({ ch }) => window.__stub.deliver(ch, { type: "tick", now: Date.now() - 600000 }, "conn-x"), { ch: CHANNEL });
@@ -271,6 +272,37 @@ const sent = (page) => page.evaluate(() => window.__stub.st.sent);
   await sleep(300);
   ok("player: a hostile track is not loaded", (await audioState(page)).src === "");
   ok("player: and reads as nothing playing", (await page.textContent("#title")) === "Nothing playing");
+  await page.close();
+}
+
+{
+  // The same correction, landing while a seek is still under way. That race is what
+  // made the test above fail about one run in six: the tick arrived while the
+  // player's first seek was in flight (logged: readyState 1, seeking true), the
+  // correction was skipped, and nothing looked again for four seconds. A real
+  // network will not open that gap on demand, so it is opened by hand: the element
+  // reports "seeking" while the tick arrives, then the seek lands.
+  const page = await browser.newPage();
+  const running = { v: 1, seq: 1, track: { k: "a", u: SUNO(U_LONG), t: "Long" }, at: Date.now() - 5000, paused: null };
+  const errors = await open(page, { meta: { [STATE_KEY]: running } });
+  await page.click("#tune");
+  await page.waitForFunction(() => { const x = document.getElementById("music"); return x.readyState >= 3 && !x.seeking && !x.paused; });
+  await page.evaluate(({ ch }) => {
+    const x = document.getElementById("music");
+    Object.defineProperty(x, "seeking", { get: () => true, configurable: true });
+    window.__stub.deliver(ch, { type: "tick", now: Date.now() + 60000 }, "conn-gm");
+  }, { ch: CHANNEL });
+  await sleep(200);
+  ok("player: mid-seek, the correction waits (the gap is really open)", (await audioState(page)).t < 20);
+  await page.evaluate(() => {
+    const x = document.getElementById("music");
+    delete x.seeking;
+    x.dispatchEvent(new Event("seeked"));
+  });
+  await sleep(600);
+  const a = await audioState(page);
+  ok(`player: the moment the seek lands, it corrects (${a.t.toFixed(1)}s), not four seconds later`, a.t > 63 && a.t < 70);
+  ok("player: nothing throws", errors.length === 0);
   await page.close();
 }
 
@@ -457,6 +489,60 @@ const sent = (page) => page.evaluate(() => window.__stub.st.sent);
   ok("panel player: nothing throws", errors.length === 0);
   ok("panel player: no GM section", !(await page.isVisible("#gm")));
   ok("panel player: warned when there is no GM", await page.isVisible("#no-gm"));
+  await page.close();
+}
+
+// -------------------------------------------------------------
+// 5. The "Copy for Radio" bookmark, run against a page shaped like a Suno playlist
+// -------------------------------------------------------------
+{
+  const A = "aaaaaaaa-1111-4111-8111-111111111111";
+  const B = "bbbbbbbb-2222-4222-8222-222222222222";
+  fs.writeFileSync(path.join(stage, "fake-suno.html"), `<!DOCTYPE html><body>
+    <div class="card"><a href="/song/${A}"><img alt=""></a><a href="/song/${A}">Liquid Banjo | with a trumpet twist</a></div>
+    <div class="card"><a href="/song/${B}"><img alt=""></a><a href="https://suno.com/song/${B}?sh=xyz">Tavern Night</a></div>
+    <a href="/playlist/d827cffa-9998-4ad5-86d4-6701d9a43869">A playlist, not a song</a>
+    <a href="/@gsgrimoire">A profile</a>
+  </body>`);
+  fs.writeFileSync(path.join(stage, "empty-suno.html"), "<!DOCTYPE html><body><p>Loading…</p></body>");
+
+  const page = await browser.newPage();
+  page.setDefaultTimeout(5000);
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto(site.origin + "/suno.html");
+  await page.waitForFunction(() => document.getElementById("bookmarklet").href.startsWith("javascript:"));
+  const href = await page.getAttribute("#bookmarklet", "href");
+  ok("help page: nothing throws", errors.length === 0);
+  ok("help page: the bookmark is built", href.length > 200 && !href.includes("export"));
+
+  const run = async (file) => {
+    await page.goto(site.origin + "/" + file);
+    await page.evaluate(() => {
+      window.__copied = null; window.__alerts = [];
+      window.alert = (m) => window.__alerts.push(m);
+      window.prompt = () => null;
+      Object.defineProperty(navigator, "clipboard", { value: { writeText: async (t) => { window.__copied = t; } }, configurable: true });
+    });
+    // Exactly what the browser does with a javascript: bookmark.
+    await page.evaluate((h) => { (0, eval)(decodeURIComponent(h.slice("javascript:".length))); }, href);
+    await sleep(100);
+    return page.evaluate(() => ({ copied: window.__copied, alerts: window.__alerts }));
+  };
+
+  const got = await run("fake-suno.html");
+  const lines = (got.copied || "").split("\n");
+  ok(`bookmark: one line per song, not per link (${lines.length})`, lines.length === 2);
+  ok("bookmark: the title comes from the title link, not the cover", lines[0] === `Liquid Banjo / with a trumpet twist | https://suno.com/song/${A}`);
+  ok("bookmark: tracking parameters are dropped", lines[1] === `Tavern Night | https://suno.com/song/${B}`);
+  ok("bookmark: it says how many it copied", /2 songs copied/.test(got.alerts[0] || ""));
+  const parsed = parseTrackList(got.copied || "");
+  ok("bookmark: what it copies pastes straight into a playlist", parsed.tracks.length === 2 && parsed.errors.length === 0
+    && parsed.tracks[0].t === "Liquid Banjo / with a trumpet twist");
+
+  const none = await run("empty-suno.html");
+  ok("bookmark: an empty page says to scroll, and copies nothing", none.copied === null && /scroll/.test(none.alerts[0] || ""));
+  ok("bookmark: nothing throws", errors.length === 0);
   await page.close();
 }
 

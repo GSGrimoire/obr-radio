@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Suno to Radio</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .panel { max-width: 640px; margin: 0 auto; padding: 24px 16px; }
+  .bm { display: inline-block; font-size: 16px; padding: 10px 16px; border-radius: 8px; background: var(--accent);
+    color: var(--accent-ink); font-weight: 700; text-decoration: none; cursor: grab; }
+  ol li { margin-bottom: 8px; }
+  code { background: var(--panel); padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="panel">
+  <h1>Copy a Suno playlist into the Radio</h1>
+  <p>Suno won't let other sites read its playlists, but a bookmark on suno.com can read the page it's on. This one copies every song on the page in one go.</p>
+
+  <h2>Once: add the bookmark</h2>
+  <p>Drag this button to your browser's bookmarks bar:</p>
+  <p><a id="bookmarklet" class="bm" href="#">Copy for Radio</a></p>
+  <p class="muted">Can't see a bookmarks bar? Press Ctrl+Shift+B (Cmd+Shift+B on a Mac).</p>
+
+  <h2>Each time</h2>
+  <ol>
+    <li>Open the playlist on suno.com. Scroll down until every song you want is shown, because Suno only puts songs on the page as you reach them.</li>
+    <li>Press <strong>Copy for Radio</strong> in your bookmarks bar. It tells you how many songs it copied.</li>
+    <li>In Owlbear, open <strong>Radio</strong>, pick or make a playlist, paste into the box and press <strong>Save</strong>.</li>
+  </ol>
+
+  <h2>Other ways that work</h2>
+  <ul>
+    <li>A song's address: <code>https://suno.com/song/…</code></li>
+    <li>A song's whole embed code, as Suno's Share → Embed gives it</li>
+    <li>Any text with song links in it; every link is taken</li>
+  </ul>
+  <p class="muted">Short share links (<code>suno.com/s/…</code>) can't be used. Open one and copy the address it turns into. Songs must be public for the table to hear them.</p>
+  <p class="muted">The bookmark only reads the page and writes to your clipboard. It sends nothing anywhere and changes nothing on Suno.</p>
+</div>
+<script type="module">
+  import { collectSunoSongs } from "./suno-collect.js";
+  // Built from the same function the tests run, so the button cannot drift from
+  // what was tested. The export keyword is not part of toString(), so this is the
+  // bare function, called at once.
+  document.getElementById("bookmarklet").href =
+    "javascript:" + encodeURIComponent("(" + collectSunoSongs.toString() + ")();void 0");
+</script>
+</body>
+</html>

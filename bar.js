@@ -262,7 +262,10 @@ async function sync() {
       loadedSeq = s.seq;
       audio.src = s.track.u;
       audio.currentTime = expected;
-    } else if (!paused && !audio.paused && audio.readyState >= 3) {
+    } else if (!paused && audio.readyState >= 1 && !audio.seeking) {
+      // readyState 1 is "length known", which is all a seek needs. Waiting for
+      // buffered data (3) meant a correction arriving mid-buffer was skipped until
+      // the next four-second check — caught by the suite failing one run in three.
       correctDrift(audio.currentTime, expected, (t) => { audio.currentTime = t; });
     }
     applyVolumes();
@@ -332,6 +335,11 @@ audio.addEventListener("error", () => {
   trackFailed(loadedSeq, "That track would not play.");
 });
 audio.addEventListener("playing", () => { errorsInARow = 0; setStatus(""); });
+// A correction that arrives mid-seek — a player joining, then a clock tick landing
+// while the first seek is still fetching — is skipped by sync(), and would wait for
+// the next four-second check. Look again the moment the seek lands instead.
+audio.addEventListener("seeked", () => sync());
+audio.addEventListener("canplay", () => sync());
 // Seeking before the file has loaded is allowed but not always honoured; once the
 // length is known, go where the room says.
 audio.addEventListener("loadedmetadata", () => {

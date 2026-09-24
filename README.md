@@ -5,7 +5,7 @@ straight from YouTube and Suno links, and nothing is downloaded or re-hosted.
 It can also react to the Dreams & Machines extension: its own playlist for
 initiative, and a sound for Threat, Momentum, rests and scene changes.
 
-Version **0.1**. Not yet tried in a real room; see *Live checks* below.
+Version **0.2**. Not yet tried in a real room; see *Live checks* below.
 
 ## Using it
 
@@ -31,13 +31,22 @@ because the moved bar is a new page).
 
 ### Suno links
 
-Suno's **Share** button gives a short link, `suno.com/s/…`. That can't be read
-from inside Owlbear: turning it into a song means asking suno.com, and suno.com
-won't answer a page on another site. Open the short link and copy the address
-it turns into, `suno.com/song/…`. Songs must be public.
+Any of these works in a playlist:
 
-Suno playlists can't be read either, for the same reason. Paste the songs one per
-line.
+- **a whole Suno playlist at once:** add the **Copy for Radio** bookmark from
+  [the Suno helper page](https://gsgrimoire.github.io/obr-radio/suno.html) (it is
+  linked from the panel). On a Suno playlist page, press it and paste what it copies.
+- a song's address, `https://suno.com/song/<id>`
+- a song's embed code (Share → Embed), pasted whole
+- any text with song links in it; every link on a line is taken
+
+Why the bookmark rather than just pasting the playlist link: Suno will not answer
+a page on another site, so the radio cannot read a playlist, or follow a short
+`suno.com/s/…` share link. A bookmark runs as a suno.com page and can read what is
+on the screen. It reads the page and writes to your clipboard, nothing else. Suno
+only puts songs on the page as you scroll, so scroll to the end first.
+
+Songs must be public for the table to hear them.
 
 ### YouTube
 
@@ -60,6 +69,7 @@ moved, or ordinary buffering would make everyone stutter.
 | `radio.js` | every rule: link parsing, the room record, timing, playlists, the D&M cues. Pure, no SDK |
 | `bar.js` / `bar.html` | the docked player. Every client runs one; the GM's also conducts |
 | `panel.js` / `index.html` | the toolbar panel: open the bar, and the GM's playlists and soundscape |
+| `suno-collect.js` / `suno.html` | the Copy for Radio bookmark, and the page you install it from |
 | `sdk.js` | the Owlbear SDK, vendored (same bundle as `dnm-obr`) |
 
 ### Decisions, and why
@@ -89,6 +99,16 @@ moved, or ordinary buffering would make everyone stutter.
 - **The Suno file address is one function**, `sunoAudioUrl()`. Suno has no public
   API; `cdn1.suno.ai/<id>.mp3` is simply where its songs are. If Suno moves them,
   that is the line to change.
+- **A pasted line with HTML or more than one link is read for every link in it.**
+  That is what makes a whole embed code work; an iframe names the same song twice
+  (`src` and the fallback `href`), so repeats within a line collapse to one.
+- **The bookmark is built from the tested function.** `suno.html` turns
+  `collectSunoSongs()` into the bookmark with `toString()`, so the button cannot
+  drift from what `ui.test.mjs` ran. Keep that function self-contained.
+- **A correction is re-checked the moment a seek lands** (`seeked`, `canplay`). A
+  clock tick arriving while a player's first seek was still in flight used to be
+  skipped and wait four seconds for the next check. The suite caught it failing
+  one run in six; logging showed `readyState 1, seeking true` at the tick.
 - **No `prompt()` or `confirm()`.** Owlbear frames extensions and a sandboxed frame
   may refuse modals. Deleting asks for a second press instead.
 
@@ -96,8 +116,8 @@ moved, or ordinary buffering would make everyone stutter.
 
 ```sh
 npm install playwright --no-save
-node tests/radio.test.mjs     # the rules, 75 checks, no browser
-node tests/ui.test.mjs        # the bar and panel in Chromium, 62 checks
+node tests/radio.test.mjs     # the rules, 84 checks, no browser
+node tests/ui.test.mjs        # the bar, panel and bookmark in Chromium, 74 checks
 ```
 
 `ui.test.mjs` swaps the SDK for a stub in a staged copy under `out/`, and answers
@@ -110,16 +130,22 @@ fails four checks; a crash in `bar.js` fails the suite in seconds.
 
 1. The bar plays sound after one press inside Owlbear, and **keeps playing** while
    the map is used.
-2. `cdn1.suno.ai/<id>.mp3` plays for a page on `gsgrimoire.github.io`. Try the
-   *Liquid Banjo* song, and check that joining partway through lands at the right
-   place (that needs byte ranges).
-3. YouTube's real player starts from our press, or shows "Press play on the
+2. `cdn1.suno.ai/<id>.mp3` plays for a page on `gsgrimoire.github.io`. Try
+   *Liquid Banjo* (`suno.com/song/dd6fccb4-531b-4a6d-ba32-9a181e3c4670`), and check
+   that joining partway through lands at the right place (that needs byte ranges).
+3. The Copy for Radio bookmark on a real Suno playlist page finds every song, with
+   titles. It was tested against a page shaped the way Suno's links are expected
+   to be, not against Suno.
+4. YouTube's real player starts from our press, or shows "Press play on the
    video once". Try the GS Grimoire playlist.
-4. Two players stay within a couple of seconds of each other.
-5. Initiative, Threat, Momentum and a Breather from the D&M extension each do what
+5. Two players stay within a couple of seconds of each other.
+6. Initiative, Threat, Momentum and a Breather from the D&M extension each do what
    the soundscape says.
 
 ## Releases
 
+- **0.2**: paste Suno embed codes, or any text with links, straight into a
+  playlist; a Copy for Radio bookmark takes a whole Suno playlist at once. Fixed a
+  late-joining player waiting up to four seconds to catch up.
 - **0.1**: first version. Mixed playlists from YouTube, YouTube playlists, Suno
   and audio links. Synced playback, a docked bar, and a D&M soundscape.

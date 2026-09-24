@@ -1,6 +1,6 @@
 {
   "name": "GS Grimoire Radio",
-  "version": "0.1",
+  "version": "0.2",
   "manifest_version": 1,
   "author": "GS Grimoire",
   "description": "Play music to the whole table from YouTube and Suno links, with sounds that react to the Dreams & Machines extension",

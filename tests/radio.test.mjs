@@ -76,6 +76,30 @@ const UUID = "0f6d3c1e-2b8a-4e5f-9a7b-1c2d3e4f5a6b";
 }
 
 // -------------------------------------------------------------
+// Pasting embed codes and whole paragraphs (0.2)
+// -------------------------------------------------------------
+{
+  const GUS = "dd6fccb4-531b-4a6d-ba32-9a181e3c4670";
+  const embed = `<iframe src="https://suno.com/embed/${GUS}" width="760" height="240" frameborder="0" allow="autoplay; encrypted-media; fullscreen" allowfullscreen loading="lazy" referrerpolicy="no-referrer-when-downgrade"><a href="https://suno.com/song/${GUS}">Listen on Suno</a></iframe>`;
+  const one = parseTrackList(embed);
+  ok("Suno's embed code, pasted whole, is one song", one.tracks.length === 1 && one.errors.length === 0);
+  ok("and it is the right song", one.tracks[0]?.u === `https://cdn1.suno.ai/${GUS}.mp3`);
+  ok("the song page address works too", parseLink(`https://suno.com/song/${GUS}`).track?.u === `https://cdn1.suno.ai/${GUS}.mp3`);
+
+  const para = parseTrackList(`Tonight: https://suno.com/song/${GUS}, then https://youtu.be/_YsP_UGd8Ns.`);
+  ok("a sentence with two links gives both", para.tracks.map((t) => t.k).join() === "a,yt");
+  ok("trailing punctuation is not part of a link", para.tracks[1]?.v === "_YsP_UGd8Ns");
+
+  const ytEmbed = parseTrackList('<iframe src="https://www.youtube.com/embed/videoseries?si=abc&amp;list=PLRy5AGzKZLmE"></iframe>');
+  ok("YouTube's playlist embed code works, &amp; and all", ytEmbed.tracks[0]?.k === "ytl" && ytEmbed.tracks[0].l === "PLRy5AGzKZLmE");
+  ok("HTML with no usable link is reported", parseTrackList("<p>hello</p>").errors.length === 1);
+  const mixed = parseTrackList(`<a href="https://suno.com/s/cq8ogDYThAoJj3fo">x</a> <a href="https://suno.com/song/${GUS}">y</a>`);
+  ok("a line with one bad and one good link keeps the good one", mixed.tracks.length === 1 && mixed.errors.length === 0);
+  ok("a pasted embed round-trips through the editor",
+    parseTrackList(formatTrackList(one.tracks)).tracks[0]?.u === one.tracks[0].u);
+}
+
+// -------------------------------------------------------------
 // Room state is untrusted
 // -------------------------------------------------------------
 {

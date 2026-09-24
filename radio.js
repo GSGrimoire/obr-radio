@@ -7,7 +7,7 @@
 // room, the same arrangement dnm-obr keeps with dnm.js.
 // =============================================================
 
-export const RADIO_VERSION = "0.1";
+export const RADIO_VERSION = "0.2";
 
 // The namespace. A key, never a URL — nothing is fetched from it. Changing it
 // orphans every room's radio state and every GM's saved playlists, so it needs a
@@ -178,16 +178,48 @@ export function parseLine(line) {
   return found;
 }
 
-// The whole editor box. Every line is accounted for: a track, or an error naming
+// Every link in a line of pasted text that is not a plain "Title | link" line: an
+// embed code, a paragraph copied from a web page, several links on one row. An
+// iframe carries the same song twice (src and the fallback href), so repeats within
+// the line collapse to one.
+const URL_IN_TEXT = /https?:\/\/[^\s"'<>|]+/gi;
+
+function parseMany(line) {
+  const urls = (line.replace(/&amp;/g, "&").match(URL_IN_TEXT) || [])
+    .map((u) => u.replace(/[.,;:!?)\]]+$/, ""));
+  const tracks = [];
+  const seen = new Set();
+  let firstError = "";
+  for (const u of urls) {
+    const found = parseLink(u);
+    if (found.error) { firstError = firstError || found.error; continue; }
+    const key = trackKey(found.track);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    found.track.s = u;
+    tracks.push(found.track);
+  }
+  return { tracks, error: tracks.length ? "" : firstError || "No link found in this line." };
+}
+
+// The whole editor box. Every line is accounted for: tracks, or an error naming
 // the line, so a typo is pointed at rather than silently dropped.
+//
+// A line is read as "Title | link" when that is what it is. When it holds HTML or
+// more than one link — an embed code pasted whole — every usable link is taken
+// from it instead, so nobody has to dig the song id out by hand.
 export function parseTrackList(text) {
   const tracks = [];
   const errors = [];
   String(text ?? "").split(/\r?\n/).forEach((line, i) => {
-    const found = parseLine(line);
-    if (!found) return;
-    if (found.error) errors.push({ line: i + 1, error: found.error });
-    else if (tracks.length < MAX_TRACKS) tracks.push(found.track);
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) return;
+    const linkCount = (trimmed.match(URL_IN_TEXT) || []).length;
+    const found = /[<>]/.test(trimmed) || linkCount > 1
+      ? parseMany(trimmed)
+      : (() => { const one = parseLine(trimmed); return one.error ? one : { tracks: [one.track] }; })();
+    if (found.error) { errors.push({ line: i + 1, error: found.error }); return; }
+    for (const t of found.tracks) if (tracks.length < MAX_TRACKS) tracks.push(t);
   });
   return { tracks, errors };
 }
