@@ -1,0 +1,61 @@
+/* GS Grimoire radio. Dark to sit beside Owlbear's own panels. */
+:root {
+  --bg: #16141c;
+  --panel: #201d28;
+  --line: #34303f;
+  --text: #ece6da;
+  --muted: #a39b8c;
+  --accent: #c9a45c;
+  --accent-ink: #1a160e;
+  --bad: #e07a6a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  padding: 4px 9px; cursor: pointer; min-height: 28px; }
+button:hover { border-color: var(--accent); }
+button.primary, .tune { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button.ghost { background: none; border-color: transparent; color: var(--muted); padding: 2px 6px; }
+[hidden] { display: none !important; }
+
+/* ---------- the docked bar ---------- */
+body.bar { overflow: hidden; }
+.bar-row { display: flex; align-items: center; gap: 6px; padding: 6px 8px 0; min-width: 0; }
+.bar-row.small { font-size: 12px; color: var(--muted); padding-bottom: 6px; }
+.bar-row.small label { display: flex; align-items: center; gap: 4px; }
+.tune { white-space: nowrap; flex: 1 1 auto; padding: 3px 10px; min-height: 26px; }
+/* Until the press, the button IS the second row: volume means nothing before sound. */
+body:not(.tuned) .vol { display: none; }
+.bar-row.small input[type=range] { width: 70px; accent-color: var(--accent); }
+.now { flex: 1 1 auto; min-width: 0; }
+.now-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.now-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--muted); }
+.transport { display: flex; gap: 3px; flex: 0 0 auto; }
+.transport button { padding: 2px 6px; }
+.gm-only { display: none !important; }
+body.gm .gm-only { display: flex !important; }
+.status { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--accent); }
+.yt-wrap { display: none; width: 320px; height: 200px; }
+body.video .yt-wrap { display: block; }
+
+/* ---------- the panel ---------- */
+.panel { padding: 12px; }
+.panel h1 { font-size: 16px; margin: 0 0 8px; display: flex; align-items: center; gap: 8px; }
+.panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 16px 0 6px; }
+.panel .badge { font-size: 11px; background: var(--accent); color: var(--accent-ink); border-radius: 4px; padding: 1px 6px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+.row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.row > .grow { flex: 1 1 140px; min-width: 0; }
+.muted { color: var(--muted); font-size: 12px; }
+.error { color: var(--bad); font-size: 12px; }
+select, input[type=text], input[type=number], textarea {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; }
+textarea { width: 100%; min-height: 140px; resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+input[type=range] { accent-color: var(--accent); }
+.cue { display: grid; grid-template-columns: 8.5em minmax(0, 1fr) auto; gap: 6px; align-items: center; margin-bottom: 5px; }
+.cue input { width: 100%; min-width: 0; }
+.cue label { font-size: 12px; }
+details > summary { cursor: pointer; color: var(--muted); }

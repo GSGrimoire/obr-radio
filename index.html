@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Radio</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="panel">
+  <h1>Radio <span id="gm-badge" class="badge" hidden>GM</span></h1>
+
+  <div class="card">
+    <div class="muted">Now playing</div>
+    <div id="now-title"><strong>Nothing playing</strong></div>
+    <div id="now-label" class="muted"></div>
+    <div class="row" style="margin-top:8px">
+      <button id="open-bar" class="primary">Open the radio</button>
+      <span class="muted">Music plays in the radio bar. Keep it open while you play.</span>
+    </div>
+    <p id="no-gm" class="error" hidden>No GM in the room. The music will not change until a GM joins.</p>
+  </div>
+
+  <div id="gm" hidden>
+    <h2>Playlists</h2>
+    <div class="card">
+      <div class="row">
+        <select id="list-pick" class="grow" aria-label="Playlist"></select>
+        <button id="list-delete">Delete</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <input type="text" id="list-name" class="grow" maxlength="40" placeholder="Playlist name" aria-label="Playlist name">
+        <button id="list-new">New</button>
+        <button id="list-rename">Rename</button>
+      </div>
+      <p class="muted">One link per line. Add a title in front with a bar: <code>Tavern | https://suno.com/song/…</code>.
+        YouTube videos, YouTube playlists, Suno songs and audio-file links can be mixed.</p>
+      <textarea id="list-text" spellcheck="false" wrap="off" placeholder="https://youtube.com/playlist?list=…&#10;Liquid Banjo | https://suno.com/song/…"></textarea>
+      <div id="list-errors"></div>
+      <div class="row" style="margin-top:6px">
+        <button id="list-save">Save</button>
+        <button id="list-play" class="primary">Play this list</button>
+        <label class="muted"><input type="checkbox" id="shuffle"> Shuffle</label>
+        <span id="list-msg" class="muted"></span>
+      </div>
+    </div>
+
+    <h2>Soundscape</h2>
+    <div class="card">
+      <p class="muted">Reacts to the Dreams &amp; Machines extension, if it is in the room.</p>
+      <div class="row">
+        <label for="combat-list">Initiative plays</label>
+        <select id="combat-list" class="grow"></select>
+      </div>
+      <p class="muted">When initiative ends, the music it interrupted comes back where it left off.</p>
+      <div class="muted" style="margin:8px 0 4px">Sounds. A Suno or audio-file link each; leave empty for none.</div>
+      <div id="cues"></div>
+      <div class="row">
+        <label for="cue-seconds">Play each sound for</label>
+        <input type="number" id="cue-seconds" min="2" max="30" style="width:4.5em"> <span class="muted">seconds</span>
+        <button id="cues-save">Save</button>
+        <span id="cues-msg" class="muted"></span>
+      </div>
+    </div>
+
+    <details class="card">
+      <summary>Backup</summary>
+      <p class="muted">Playlists are kept in this browser. Copy this text somewhere safe, or paste one in to load it.</p>
+      <textarea id="backup" spellcheck="false"></textarea>
+      <div class="row"><button id="backup-export">Show my library</button><button id="backup-import">Load this library</button><span id="backup-msg" class="muted"></span></div>
+    </details>
+  </div>
+</div>
+<script type="module" src="panel.js"></script>
+</body>
+</html>

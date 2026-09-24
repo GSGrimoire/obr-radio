@@ -1,0 +1,3 @@
+# Test scaffolding, not source
+out/
+node_modules
