@@ -24,14 +24,16 @@
 // =============================================================
 import OBR from "./sdk.js";
 import {
-  STATE_KEY, CHANNEL, BAR_ID, SCENE_KEY, LIBRARY_KEY, PREFS_KEY, RESUME_KEY, DNM_ROOM_KEY,
+  STATE_KEY, CHANNEL, BAR_ID, SCENE_KEY, LIBRARY_KEY, PREFS_KEY, RESUME_KEY, DNM_ROOM_KEY, RETUNE_KEY,
   CORNERS, RADIO_VERSION, readPrefs, barPopover, barSize,
 } from "./radio.js";
-import { readTrack, trackKey, isEmbed } from "./sources.js";
+import { readTrack, trackKey, isEmbed, isSet } from "./sources.js";
 import { readLibrary, findSound, findScene, newId } from "./library.js";
 import * as S from "./state.js";
-import { diffDnm, planReaction, dnmPresent } from "./reactions.js";
-import { NS, readCommand, isHello, channelName, GM_ONLY } from "./link.js";
+import { diffDnm, planReaction, dnmPresent, CUE_NAMES } from "./reactions.js";
+import {
+  NS, readCommand, isHello, channelName, GM_ONLY, LINK_OBR_CHANNEL, stamp, toPieces, makeAssembler, makeDeduper,
+} from "./link.js";
 import { createPlayer, playShot, stopShots } from "./players.js";
 
 const el = (id) => document.getElementById(id);
@@ -200,8 +202,8 @@ function syncMusic() {
   const m = state.music;
   const key = m ? trackKey(m.track, m.sub) + "#" + m.seq : "";
   if (music && music.key !== key) {
-    // A YouTube playlist moving to its next video is the same player, not a new one.
-    const same = m && music.seq === m.seq && m.track.k === "ytl" && music.player.track.l === m.track.l;
+    // A playlist moving to its next video or track is the same player, not a new one.
+    const same = m && music.seq === m.seq && isSet(m.track) && trackKey(music.player.track) === trackKey(m.track);
     if (same) {
       music.key = key;
       music.player.jumpTo(m.sub);
@@ -231,8 +233,20 @@ function syncMusic() {
       onTitle: (title) => {
         if (isGM() && state.music && state.music.seq === seq && title !== state.music.nt) commit(S.musicTitle(state, title));
       },
+      // A hand on the video. The GM's pause is the room's pause; a player's is their
+      // own, held until they press play on it again.
+      onUserPause: () => {
+        if (!state.music || state.music.seq !== seq) return;
+        if (isGM()) commit(S.musicPause(state, Date.now()));
+        else if (music) { music.held = true; render(); }
+      },
+      onUserPlay: () => {
+        if (!state.music || state.music.seq !== seq) return;
+        if (isGM()) commit(S.musicResume(state, Date.now()));
+        else if (music) { music.held = false; sync(); }
+      },
     });
-    music = channel(player, { key, seq });
+    music = channel(player, { key, seq, started: Date.now() });
     applyVolumes();
     Promise.resolve(player.load(expected, m.sub)).then(() => {
       if (m.paused !== null) player.pause();
@@ -241,12 +255,10 @@ function syncMusic() {
     return;
   }
   const p = music.player;
-  if (m.paused !== null) { if (p.playing()) p.pause(); return; }
+  if (m.paused !== null) { music.held = false; if (p.playing()) p.pause(); return; }
+  if (music.held) return;
   if (!p.playing() && p.ready()) {
     Promise.resolve(p.play()).catch(blocked);
-    if (p.stalled && p.stalled() && music.started && Date.now() - music.started > 4000) {
-      setStatus("Press play on the video once.");
-    }
     music.started = music.started || Date.now();
   }
   correctMusic(p, expected);
@@ -266,17 +278,30 @@ function syncLayers() {
         role: "layer", layer: id, loop: true,
         onSettle: () => sync(),
         onError: (why) => setStatus(`${l.label}: ${why}`),
+        // As with the music: the GM's hand pauses it for the room, a player's for them.
+        onUserPause: () => {
+          const c = layers.get(id);
+          if (isGM()) commit(S.layerPause(state, id, true));
+          else if (c) { c.held = true; render(); }
+        },
+        onUserPlay: () => {
+          const c = layers.get(id);
+          if (isGM()) commit(S.layerPause(state, id, false));
+          else if (c) { c.held = false; sync(); }
+        },
       });
-      ch = channel(player, { key: trackKey(l.track), layer: l });
+      ch = channel(player, { key: trackKey(l.track), layer: l, started: Date.now() });
       layers.set(id, ch);
       applyVolumes();
       const start = S.layerPosition(l, gmNow(), NaN);
-      Promise.resolve(player.load(start)).then(() => player.play().catch(blocked)).catch(() => {});
+      Promise.resolve(player.load(start)).then(() => (l.off ? player.pause() : player.play().catch(blocked))).catch(() => {});
       continue;
     }
     const p = ch.player;
     if (!p.ready()) continue;
-    if (!p.playing()) { Promise.resolve(p.play()).catch(blocked); continue; }
+    if (l.off) { ch.held = false; if (p.playing()) p.pause(); continue; }
+    if (ch.held) continue;
+    if (!p.playing()) { ch.started = ch.started || Date.now(); Promise.resolve(p.play()).catch(blocked); continue; }
     // Everyone, the GM included, is pulled to the layer's clock: a loop has no
     // "truth" worth protecting, only a place everyone should be.
     const dur = p.duration();
@@ -298,6 +323,29 @@ function resizeForEmbeds() {
   OBR.popover.setHeight(BAR_ID, height).catch(() => {});
 }
 
+// A video that the bar asked to play and that has sat still for a while is
+// waiting for a click: the browser lets a video start by itself only once
+// somebody has clicked it. Said on the bar and in the console, since nothing else
+// explains a silence.
+function waitingForClick() {
+  const now = Date.now();
+  const stuck = (ch, off) => ch && !off && !ch.held && ch.player.embed && ch.player.ready()
+    && ch.player.stalled && ch.player.stalled() && ch.started && now - ch.started > 4000;
+  if (music && state.music && state.music.paused === null && stuck(music, false)) return true;
+  for (const ch of layers.values()) if (stuck(ch, ch.layer.off)) return true;
+  return false;
+}
+
+let clickNote = false;
+function noteClicks() {
+  const waiting = tuned && waitingForClick();
+  if (waiting === clickNote) return;
+  clickNote = waiting;
+  if (waiting) setStatus("Press ▶ on the video once — the browser wants a click before a video plays.");
+  else if (statusEl.textContent.startsWith("Press ▶")) setStatus(lastError);
+  push();
+}
+
 function sync() {
   render();
   if (tuned) {
@@ -310,6 +358,7 @@ function sync() {
   }
   resizeForEmbeds();
   applyVolumes();
+  noteClicks();
 }
 
 function stopEverything() {
@@ -405,7 +454,7 @@ function syncScatter() {
       const wait = (cur.min + Math.random() * (cur.max - cur.min)) * 1000;
       scatterTimers.set(id, setTimeout(() => {
         const now = state.amb.find((x) => x.id === id);
-        if (now) {
+        if (now && !now.off) {
           OBR.broadcast.sendMessage(CHANNEL, { type: "shot", layer: id, track: readTrack(now.track), vol: now.vol },
             { destination: "ALL" }).catch(() => {});
         }
@@ -493,14 +542,34 @@ function snapshotForConsole() {
       error: lastError,
       embeds: S.embedCount(state),
       gm: gmConnections.size > 0 || isGM(),
+      click: clickNote,
+      held: !!(music && music.held) || [...layers.values()].some((c) => c.held),
     },
   };
 }
 
+// To the panel inside Owlbear, both ways (see link.js), and to a popped-out window.
+function toPanel(msg) {
+  const m = stamp(msg);
+  try { if (channelBC) channelBC.postMessage(m); } catch (err) { /* closed */ }
+  for (const piece of toPieces(m)) {
+    OBR.broadcast.sendMessage(LINK_OBR_CHANNEL, piece, { destination: "LOCAL" }).catch(() => {});
+  }
+}
+
 function push() {
   const msg = snapshotForConsole();
-  try { if (channelBC) channelBC.postMessage(msg); } catch (err) { /* closed */ }
+  toPanel(msg);
   try { if (popup && !popup.closed) popup.postMessage(msg, location.origin); } catch (err) { /* gone */ }
+}
+
+// A message from the panel, by whichever route delivered it first.
+const assemble = makeAssembler();
+const firstCopy = makeDeduper();
+function fromPanel(data) {
+  const msg = assemble(data);
+  if (!msg || !firstCopy(msg)) return;
+  onLinkMessage(msg, toPanel);
 }
 
 async function runCommand(cmd) {
@@ -545,12 +614,14 @@ async function runCommand(cmd) {
     }
     case "layer.remove": return commit(S.layerRemove(await freshState(), String(args.id || "")));
     case "layer.vol": return commit(S.layerVolume(await freshState(), String(args.id || ""), args.v));
+    case "layer.pause": return commit(S.layerPause(await freshState(), String(args.id || ""), !!args.off));
     case "layer.clear": return commit(S.layersClear(await freshState()));
     case "sound.fire": return fireSound(String(args.id || ""));
     case "sound.stopAll":
       await OBR.broadcast.sendMessage(CHANNEL, { type: "stopSounds" }, { destination: "ALL" }).catch(() => {});
       return { ok: true };
     case "scene.recall": return recallScene(String(args.id || ""));
+    case "scene.stop": return commit(S.sceneStop(await freshState(), lib, String(args.id || "")));
     case "scene.save": {
       const s = await freshState();
       const existing = args.id ? findScene(lib, args.id) : null;
@@ -561,6 +632,19 @@ async function runCommand(cmd) {
     }
     case "scene.bind": return bindObrScene(String(args.id || ""));
     case "lib.put": return putLibrary(args.lib);
+    case "lib.set": {
+      // One setting, merged into the library as it is now.
+      const key = String(args.key || "");
+      if (!["shuffle", "autoScenes", "fadeSeconds"].includes(key)) return { error: "Unknown setting." };
+      return putLibrary({ ...lib, [key]: args.value });
+    }
+    case "react.set": {
+      // One reaction, likewise: changing three in a row must not lose the first two.
+      const cue = String(args.cue || "");
+      if (!CUE_NAMES.includes(cue)) return { error: "Unknown reaction." };
+      const r = { sound: String(args.sound || ""), scene: String(args.scene || ""), restore: !!args.restore };
+      return putLibrary({ ...lib, reactions: { ...lib.reactions, [cue]: r } });
+    }
     default: return { error: "Unknown command." };
   }
 }
@@ -698,12 +782,15 @@ el("mute").addEventListener("click", () => barCommand("prefs.set", { mute: !pref
 el("popout").addEventListener("click", openPopup);
 
 // Moving means closing and reopening: Owlbear has no setPosition. The reopened bar
-// is a new page, which the browser treats as never clicked, so it asks to be tuned
-// in again.
+// is a new page. It tries to play straight away (see RETUNE_KEY); the browser may
+// still want a click, and then it asks to be tuned in again.
 el("move").addEventListener("click", async () => {
   const at = CORNERS.indexOf(prefs.corner);
   prefs = { ...prefs, corner: CORNERS[(at + 1) % CORNERS.length] };
   saveJSON(PREFS_KEY, prefs);
+  // The reopened bar tries to carry on by itself. If the browser refuses, it asks
+  // for Tune in again, as it would have anyway.
+  if (tuned) saveJSON(RETUNE_KEY, Date.now());
   let viewport = null;
   try { viewport = { width: await OBR.viewport.getWidth(), height: await OBR.viewport.getHeight() }; } catch (err) { /* default */ }
   await OBR.popover.close(BAR_ID);
@@ -714,6 +801,12 @@ el("close").addEventListener("click", () => { stopEverything(); OBR.popover.clos
 // -------------------------------------------------------------
 // Start
 // -------------------------------------------------------------
+// A bar reopened by its own ⤡ a moment ago was tuned in, and tries to stay so.
+{
+  const movedAt = Number(loadJSON(RETUNE_KEY)) || 0;
+  saveJSON(RETUNE_KEY, null);
+  if (Date.now() - movedAt < 30000) tuned = true;
+}
 render();
 
 OBR.onReady(async () => {
@@ -727,10 +820,11 @@ OBR.onReady(async () => {
 
   try {
     channelBC = new BroadcastChannel(channelName(OBR.room.id));
-    channelBC.onmessage = (ev) => onLinkMessage(ev.data, (msg) => channelBC.postMessage(msg));
+    channelBC.onmessage = (ev) => fromPanel(ev.data);
   } catch (err) {
-    console.warn("[radio] no channel to the panel", err);
+    console.warn("[radio] no BroadcastChannel to the panel; Owlbear's own route still works", err);
   }
+  OBR.broadcast.onMessage(LINK_OBR_CHANNEL, (ev) => fromPanel(ev && ev.data));
 
   const meta = await OBR.room.getMetadata().catch(() => ({}));
   state = S.readState(meta, STATE_KEY);
@@ -751,6 +845,8 @@ OBR.onReady(async () => {
 
   render();
   syncScatter();
+  // A bar reopened after a move starts straight away, not at the next check.
+  if (tuned) sync();
   push();
   if (isGM()) setInterval(sendTick, 10000);
   else OBR.broadcast.sendMessage(CHANNEL, { type: "hello" }, { destination: "REMOTE" }).catch(() => {});

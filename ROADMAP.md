@@ -30,7 +30,11 @@ over Owlbear's 128 characters, Suno had closed its .mp3 addresses (Suno links no
 play the song's public share video, falling back to the .mp3 for older songs), and a
 track that failed to load wrongly un-tuned the listener.
 
-**Next: the playtest.** Then Phase 5, in whatever order the playtest suggests.
+**1.2** answered the first table (see README, Releases): first-press buttons,
+SoundCloud playlists, per-layer pause, scenes that stop when pressed again, a hand
+on a video obeyed, reused YouTube players.
+
+**Next: the rest of the playtest.** Then Phase 5, in whatever order it suggests.
 
 ---
 

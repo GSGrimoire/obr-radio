@@ -10,7 +10,7 @@ a scene for initiative (and the music it interrupted, back afterwards), a sting 
 Threat rises, a sound for a critical or a complication. Without D&M it is a complete
 radio on its own.
 
-Version **1.1B**. Not yet tried in a real room; see *Live checks* below.
+Version **1.2**. Played once in a real room (1.1B); what that found is fixed in 1.2. See *Live checks* below.
 
 **Install:** in Owlbear, add `https://gsgrimoire.github.io/obr-radio/manifest.json`.
 
@@ -75,14 +75,15 @@ ambiences are not hosted: they play through YouTube's own player.
 |---|---|---|
 | YouTube | a video, a playlist, or an embed code | a 200px video tile shows while it plays |
 | Suno | `suno.com/song/<id>`, or its embed code | a whole Suno playlist: the [Copy for Radio bookmark](https://gsgrimoire.github.io/obr-radio/suno.html) |
-| SoundCloud | `soundcloud.com/artist/track`, or its embed code | one track per line; its widget shows while it plays |
+| SoundCloud | a track, a public playlist (`soundcloud.com/artist/sets/name`), or an embed code | its widget shows while it plays, and moves through a playlist by itself |
 | Dropbox | the share link as Dropbox gives it | turned into the file itself |
 | Anything else | a link ending in .mp3 .ogg .wav .m4a .opus .flac .webm | add `#audio` to the end of an audio link with no extension |
 
 Not possible, and the radio says why when you try: Suno short links (`suno.com/s/…`)
-and SoundCloud short links (open them, paste where they land); Suno and SoundCloud
-playlists (paste the tracks, or use the bookmark for Suno); Google Drive (it no
-longer lets its files play on other sites).
+and SoundCloud short links (open them, paste where they land); Suno playlists (use
+the bookmark); a private SoundCloud playlist's secret link (it would be handed to
+every player in the room); private Suno songs (make the song public first); Google
+Drive (it no longer lets its files play on other sites).
 
 Soundboard pads and "now and then" sounds must be audio files or Suno songs: a video
 cannot fire as a one-shot. Videos can be music, or a looped ambience layer. At most
@@ -113,6 +114,21 @@ are one-shot broadcasts from the GM's bar: nothing to sync, nothing to catch up 
 | `sdk.js` | the Owlbear SDK, vendored (the same bundle as `dnm-obr`) |
 
 ### Decisions, and why
+
+- **Nothing redraws under a pointer (1.2).** The console redraws from the bar's
+  reports. A redraw between a button's press and its release replaces the button,
+  and the click is lost: at the first table, Add and Play often needed two presses,
+  and Reactions and the Owlbear-scene setting several tries. Now a report that says
+  nothing new redraws nothing, and a redraw waits for the click to land. Single
+  settings and reactions are saved as they change (`lib.set`, `react.set`), merged
+  by the bar into the library it holds, so two quick changes cannot undo each other.
+- **A hand on a video is obeyed (1.2).** Pausing a video by clicking it used to be
+  undone by the bar's four-second check. Now the GM's click pauses or plays for the
+  room; a player's click holds their own copy until they press play on it.
+- **YouTube players are kept and reused (1.2).** A browser lets a video start by
+  itself only once somebody has clicked it, and that permission belongs to the
+  player. A new player per track needed a new click per track; a reused one does
+  not. A video that sits waiting for its click says so, on the bar and in the console.
 
 - **The bar is the only writer, and keeps the library.** Room metadata is 16 kB
   shared with every extension (D&M alone reserves 11 kB), so libraries cannot live
@@ -188,9 +204,13 @@ bar, and follows a real pop-up for the popped-out window.
 3. A Suno song plays (try *Liquid Banjo*, `suno.com/song/dd6fccb4-531b-4a6d-ba32-9a181e3c4670`),
    and joining partway lands at the right place. The test browser here has no AAC
    decoder, so the share video's sound is checked only in a real browser.
-4. YouTube's real player starts from the Tune in press, or shows "Press play on the
-   video once". Try the GS Grimoire playlist.
-5. SoundCloud's real widget plays inside the bar and seeks where it is told.
+4. YouTube's real player starts from the Tune in press, or shows "Press ▶ on the
+   video once" — and after that one click, the next videos play by themselves.
+   Pausing a video by clicking it stays paused. Try the GS Grimoire playlist.
+5. SoundCloud's real widget plays inside the bar and seeks where it is told, and a
+   public playlist (`soundcloud.com/…/sets/…`) moves on track by track.
+11. Moving the bar (⤡) keeps it playing, or asks for Tune in once. Which one depends
+    on what Owlbear lets its frames do; the suite shows both paths work.
 6. Two players stay within a couple of seconds of each other, music and layers.
 7. Switching Owlbear scenes recalls the bound radio scene (the suite assumes
    Owlbear reports a scene switch through `onReadyChange`).
@@ -203,6 +223,17 @@ bar, and follows a real pop-up for the popped-out window.
 
 ## Releases
 
+- **1.2**: from the first table. Buttons work on the first press (the panel no
+  longer redraws under a click), and reactions and Owlbear-scene choices save as
+  they are picked. SoundCloud playlists play. Every ambience layer can be paused
+  and resumed on its own; the playing scene is pressed again to stop it; Enter adds
+  a pasted ambience link. Pausing a video by clicking it stays paused (the GM's
+  click pauses the room). YouTube players are reused so one click lets later videos
+  play; a video waiting for a click says so; a video that will not play inside a
+  YouTube playlist is skipped rather than the whole playlist. Moving the bar tries
+  to keep playing. The panel reaches the bar by Owlbear's own messages as well as a
+  BroadcastChannel, opens the bar by itself if none answers, and says which step it
+  is waiting on.
 - **1.1B**: the manifest description fits Owlbear's 128-character limit (1.1 could
   not be installed); Suno links play the song's share video, as Suno closed its .mp3
   addresses, with a fallback between the two; a track that fails to load no longer

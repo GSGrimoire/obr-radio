@@ -13,7 +13,7 @@
 //   · a looping ambience layer — rain, a crowd, a fire, under the music
 //   · a scattered layer       — a gull, a distant bell, at random intervals
 // =============================================================
-import { cleanText, readTrack, parseAny, trackLink, isEmbed, TITLE_MAX } from "./sources.js";
+import { cleanText, readTrack, parseAny, trackLink, isEmbed, isSet, TITLE_MAX } from "./sources.js";
 import { CUE_NAMES } from "./reactions.js";
 
 export const MAX_TRACKS = 200;
@@ -51,7 +51,7 @@ const cleanId = (x) => (/^[A-Za-z0-9_-]{1,40}$/.test(String(x ?? "")) ? String(x
 export function readLayerSpec(raw) {
   if (!raw || typeof raw !== "object") return null;
   const track = readTrack(raw.track);
-  if (!track || track.k === "ytl") return null;
+  if (!track || isSet(track)) return null;
   const mode = raw.mode === "scatter" ? "scatter" : "loop";
   // A scattered sound is a short clip fired now and then; a video cannot be one.
   if (mode === "scatter" && isEmbed(track)) return null;
@@ -84,7 +84,7 @@ function readSound(raw) {
   if (!raw || typeof raw !== "object") return null;
   const id = cleanId(raw.id);
   const track = readTrack(raw.track, { keepSource: true });
-  if (!id || !track || track.k === "ytl") return null;
+  if (!id || !track || isSet(track)) return null;
   return {
     id,
     name: cleanText(raw.name, NAME_MAX) || track.t,
@@ -195,7 +195,7 @@ export function parseSoundList(text, existing = [], rand = Math.random) {
     if (!found) return;
     if (found.error) { errors.push({ line: i + 1, error: found.error }); return; }
     for (const track of found.tracks) {
-      if (track.k === "ytl") { errors.push({ line: i + 1, error: "A whole YouTube playlist cannot be a sound. Use one video." }); continue; }
+      if (isSet(track)) { errors.push({ line: i + 1, error: "A whole playlist cannot be a sound. Use one video or track." }); continue; }
       if (sounds.length >= MAX_SOUNDS) break;
       const prior = byLink.get(trackLink(track));
       const id = prior && !used.has(prior.id) ? prior.id : newId("s", rand);

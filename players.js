@@ -10,12 +10,17 @@
 //   YouTubePlayer     YouTube's IFrame Player API — the supported way to play
 //                     YouTube on another site. Visible, 200px square: YouTube's
 //                     policies do not allow a hidden or tiny player.
-//   SoundCloudPlayer  SoundCloud's Widget API, likewise visible.
+//   SoundCloudPlayer  SoundCloud's Widget API, likewise visible. Plays one track or
+//                     a whole set.
+//
+// A video is a player people can click. When somebody pauses or plays it by hand,
+// the player says so (onUserPause / onUserPlay) instead of the bar fighting them
+// by pressing play again every four seconds.
 //
 // Nothing is downloaded, and nothing is played by any route but the source's own.
 // =============================================================
 import { EMBED_SIZE } from "./radio.js";
-import { sunoFallback } from "./sources.js";
+import { sunoFallback, isSet } from "./sources.js";
 
 const scripts = new Map();
 function loadScript(src, ready) {
@@ -95,12 +100,33 @@ function tile() {
   return { slot, inner };
 }
 
+// What a hand on the player looks like: a pause while the bar wanted it playing and
+// it had been playing, or a play while the bar wanted it paused — each a moment
+// after the bar last asked for anything, so a player catching up with the bar's
+// own request is not mistaken for a person.
+function handTracker() {
+  return {
+    want: "", at: 0, played: false,
+    ask(want) { this.want = want; this.at = Date.now(); if (want === "play") this.played = false; },
+    paused() { return this.want === "play" && this.played && Date.now() - this.at > 800; },
+    playing() { this.played = true; return this.want === "pause" && Date.now() - this.at > 1500; },
+  };
+}
+
+// A YouTube player that finished is kept, stopped and out of sight, for the next
+// video. The browser lets a video play once somebody has clicked it — and that
+// permission belongs to the player, so a fresh player for every track would need a
+// fresh click every track.
+const ytSpare = [];
+const YT_SPARE_MAX = 2;
+
 class YouTubePlayer {
   constructor(track, opts) {
     this.track = track;
     this.opts = opts;
     this.embed = true;
     this.vol = 1;
+    this.hand = handTracker();
     const { slot, inner } = tile();
     this.slot = slot;
     this.readyP = loadScript("https://www.youtube.com/iframe_api", () => !!(window.YT && window.YT.Player))
@@ -112,15 +138,34 @@ class YouTubePlayer {
           events: {
             onReady: () => resolve(this.p),
             onStateChange: (ev) => this.onState(ev.data),
-            onError: () => opts.onError && opts.onError("YouTube would not play that video."),
+            onError: () => this.onError(),
           },
         });
       }));
-    this.readyP.catch(() => opts.onError && opts.onError("YouTube would not load here."));
+    this.readyP.catch(() => { this.broken = true; this.opts.onError && this.opts.onError("YouTube would not load here."); });
+  }
+  reuse(track, opts) {
+    this.track = track;
+    this.opts = opts;
+    this.vol = 1;
+    this.hand = handTracker();
+    this.slot.style.display = "";
+    embedBox().append(this.slot);
+  }
+  onError() {
+    const o = this.opts;
+    // One video in a playlist that will not play (private, or not allowed on other
+    // sites) is skipped, not the whole playlist.
+    if (this.track.k === "ytl" && this.p) {
+      const list = this.p.getPlaylist() || [];
+      if (this.p.getPlaylistIndex() < list.length - 1) { this.hand.ask("play"); this.p.nextVideo(); return; }
+    }
+    o.onError && o.onError("YouTube would not play that video. Is it public, with embedding allowed?");
   }
   onState(s) {
     const o = this.opts;
     if (s === 1) {
+      if (this.hand.playing()) { o.onUserPlay && o.onUserPlay(); }
       o.onPlaying && o.onPlaying();
       if (this.track.k === "ytl" && o.onSub) o.onSub(this.p.getPlaylistIndex(), this.p.getCurrentTime());
       if (o.onTitle) {
@@ -128,6 +173,8 @@ class YouTubePlayer {
         if (d && d.title) o.onTitle(d.title);
       }
       o.onSettle && o.onSettle();
+    } else if (s === 2) {
+      if (this.hand.paused()) { this.hand.want = "pause"; o.onUserPause && o.onUserPause(); }
     } else if (s === 0) {
       if (o.loop) { this.p.seekTo(0, true); this.p.playVideo(); return; }
       if (this.track.k === "ytl") {
@@ -140,13 +187,20 @@ class YouTubePlayer {
   async load(start, sub = 0) {
     const p = await this.readyP;
     p.setVolume(Math.round(this.vol * 100));
+    this.hand.ask("play");
     if (this.track.k === "ytl") p.loadPlaylist({ list: this.track.l, listType: "playlist", index: sub, startSeconds: start });
     else p.loadVideoById({ videoId: this.track.v, startSeconds: start });
   }
-  jumpTo(sub) { if (this.p && this.p.getPlaylistIndex() !== sub) this.p.playVideoAt(sub); }
+  jumpTo(sub) { if (this.p && this.p.getPlaylistIndex() !== sub) { this.hand.ask("play"); this.p.playVideoAt(sub); } }
   subIndex() { return this.p && this.p.getPlaylistIndex ? this.p.getPlaylistIndex() : -1; }
-  play() { if (this.p) this.p.playVideo(); return Promise.resolve(); }
-  pause() { if (this.p) this.p.pauseVideo(); }
+  play() {
+    if (this.p) {
+      if (this.hand.want !== "play") this.hand.ask("play");
+      this.p.playVideo();
+    }
+    return Promise.resolve();
+  }
+  pause() { if (this.p) { this.hand.ask("pause"); this.p.pauseVideo(); } }
   seek(t) { if (this.p) this.p.seekTo(t, true); }
   time() { return this.p ? this.p.getCurrentTime() : NaN; }
   duration() { return this.p && this.p.getDuration ? this.p.getDuration() : NaN; }
@@ -155,6 +209,15 @@ class YouTubePlayer {
   stalled() { return !!this.p && [-1, 2, 5].includes(this.p.getPlayerState()); }
   setVolume(v) { this.vol = v; if (this.p && this.p.setVolume) this.p.setVolume(Math.round(v * 100)); }
   dispose() {
+    this.opts = {};
+    if (this.p && !this.broken && ytSpare.length < YT_SPARE_MAX) {
+      try {
+        this.p.stopVideo();
+        this.slot.style.display = "none";
+        ytSpare.push(this);
+        return;
+      } catch (err) { /* not reusable: destroy it */ }
+    }
     try { if (this.p && this.p.destroy) this.p.destroy(); } catch (err) { /* gone */ }
     this.slot.remove();
   }
@@ -170,6 +233,9 @@ class SoundCloudPlayer {
     this.dur = NaN;
     this.isPlaying = false;
     this.vol = 1;
+    this.idx = 0;
+    this.count = 0;
+    this.hand = handTracker();
     const { slot, inner } = tile();
     this.slot = slot;
     const frame = document.createElement("iframe");
@@ -183,6 +249,7 @@ class SoundCloudPlayer {
     });
     frame.src = "https://w.soundcloud.com/player/?" + params.toString();
     inner.append(frame);
+    const set = isSet(track);
     this.readyP = loadScript("https://w.soundcloud.com/player/api.js", () => !!(window.SC && window.SC.Widget))
       .then(() => new Promise((resolve) => {
         const w = window.SC.Widget(frame);
@@ -190,29 +257,64 @@ class SoundCloudPlayer {
         w.bind(E.READY, () => {
           this.w = w;
           w.getDuration((ms) => { this.dur = ms / 1000; opts.onSettle && opts.onSettle(); });
+          if (set) w.getSounds((list) => { this.count = Array.isArray(list) ? list.length : 0; });
           resolve(w);
         });
         w.bind(E.PLAY_PROGRESS, (e) => { this.pos = (e && e.currentPosition || 0) / 1000; });
-        w.bind(E.PLAY, () => { this.isPlaying = true; opts.onPlaying && opts.onPlaying(); opts.onSettle && opts.onSettle(); });
-        w.bind(E.PAUSE, () => { this.isPlaying = false; });
+        w.bind(E.PLAY, () => {
+          this.isPlaying = true;
+          const o = this.opts;
+          if (this.hand.playing()) o.onUserPlay && o.onUserPlay();
+          o.onPlaying && o.onPlaying();
+          w.getDuration((ms) => { this.dur = ms / 1000; });
+          // In a set, the widget moves on by itself; say where it went.
+          if (set) {
+            w.getCurrentSoundIndex((i) => {
+              if (Number.isInteger(i) && i !== this.idx) {
+                this.idx = i;
+                o.onSub && o.onSub(i, this.pos);
+              }
+            });
+          }
+          w.getCurrentSound((sound) => { if (sound && sound.title && o.onTitle) o.onTitle(String(sound.title)); });
+          o.onSettle && o.onSettle();
+        });
+        w.bind(E.PAUSE, () => {
+          this.isPlaying = false;
+          if (this.hand.paused()) { this.hand.want = "pause"; this.opts.onUserPause && this.opts.onUserPause(); }
+        });
         w.bind(E.FINISH, () => {
           this.isPlaying = false;
-          if (opts.loop) { w.seekTo(0); w.play(); return; }
-          opts.onEnded && opts.onEnded();
+          const o = this.opts;
+          if (o.loop) { w.seekTo(0); w.play(); return; }
+          // Not the end of a set until its last track ends.
+          if (set && this.idx < this.count - 1) return;
+          o.onEnded && o.onEnded();
         });
-        w.bind(E.ERROR, () => opts.onError && opts.onError("SoundCloud would not play that track."));
+        w.bind(E.ERROR, () => this.opts.onError && this.opts.onError(set
+          ? "SoundCloud would not play that playlist. Is it public?"
+          : "SoundCloud would not play that track."));
       }));
     this.readyP.catch(() => opts.onError && opts.onError("SoundCloud would not load here."));
   }
-  async load(start) {
+  async load(start, sub = 0) {
     const w = await this.readyP;
     w.setVolume(Math.round(this.vol * 100));
-    this.pending = start;
+    this.hand.ask("play");
+    if (isSet(this.track) && sub > 0) { this.idx = sub; w.skip(sub); }
     w.seekTo(Math.max(0, start || 0) * 1000);
     this.pos = start || 0;
   }
-  play() { if (this.w) this.w.play(); return Promise.resolve(); }
-  pause() { if (this.w) this.w.pause(); }
+  jumpTo(sub) { if (this.w && sub !== this.idx) { this.idx = sub; this.hand.ask("play"); this.w.skip(sub); } }
+  subIndex() { return this.idx; }
+  play() {
+    if (this.w) {
+      if (this.hand.want !== "play") this.hand.ask("play");
+      this.w.play();
+    }
+    return Promise.resolve();
+  }
+  pause() { if (this.w) { this.hand.ask("pause"); this.w.pause(); } }
   seek(t) { if (this.w) { this.w.seekTo(t * 1000); this.pos = t; } }
   time() { return this.pos; }
   duration() { return this.dur; }
@@ -220,12 +322,16 @@ class SoundCloudPlayer {
   playing() { return this.isPlaying; }
   stalled() { return !!this.w && !this.isPlaying; }
   setVolume(v) { this.vol = v; if (this.w) this.w.setVolume(Math.round(v * 100)); }
-  dispose() { try { if (this.w) this.w.pause(); } catch (err) { /* gone */ } this.slot.remove(); }
+  dispose() { this.opts = {}; try { if (this.w) this.w.pause(); } catch (err) { /* gone */ } this.slot.remove(); }
 }
 
 export function createPlayer(track, opts) {
-  if (track.k === "yt" || track.k === "ytl") return new YouTubePlayer(track, opts);
-  if (track.k === "sc") return new SoundCloudPlayer(track, opts);
+  if (track.k === "yt" || track.k === "ytl") {
+    const spare = ytSpare.pop();
+    if (spare) { spare.reuse(track, opts); return spare; }
+    return new YouTubePlayer(track, opts);
+  }
+  if (track.k === "sc" || track.k === "scl") return new SoundCloudPlayer(track, opts);
   return new AudioPlayer(track, opts);
 }
 

@@ -14,6 +14,7 @@
 //   { k: "yt",  v: "<11-char video id>", t }  one YouTube video
 //   { k: "ytl", l: "<playlist id>",      t }  a whole YouTube playlist
 //   { k: "sc",  u: "https://soundcloud…",t }  one SoundCloud track
+//   { k: "scl", u: "https://soundcloud…",t }  a whole SoundCloud playlist (a set)
 //
 // `s` (the link as pasted) is kept only in the GM's library so the editor can show
 // it back. Nothing needs it to PLAY, and it never goes into the room.
@@ -29,17 +30,25 @@ const AUDIO_EXT = /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac|webm)$/i;
 // SoundCloud paths the widget can play: /user/track, or an API track id.
 const SC_PATH = /^\/[A-Za-z0-9_-]{1,100}\/[A-Za-z0-9_-]{1,200}$/;
 const SC_API = /^\/tracks\/\d{1,20}$/;
+// A set (SoundCloud's word for a playlist): /user/sets/name, or an API playlist id.
+const SC_SET = /^\/[A-Za-z0-9_-]{1,100}\/sets\/[A-Za-z0-9_-]{1,200}$/;
+const SC_API_SET = /^\/playlists\/\d{1,20}$/;
 // Paths under a SoundCloud user that are pages, not tracks.
 const SC_NOT_TRACKS = new Set(["sets", "tracks", "albums", "likes", "reposts", "followers",
   "following", "popular-tracks", "comments", "spotlight", "stations"]);
 
-export const KINDS = { a: "Audio file", yt: "YouTube video", ytl: "YouTube playlist", sc: "SoundCloud" };
+export const KINDS = { a: "Audio file", yt: "YouTube video", ytl: "YouTube playlist", sc: "SoundCloud", scl: "SoundCloud playlist" };
+
+// Sources that are a whole playlist inside one player, moved through by `sub`.
+export function isSet(track) {
+  return !!track && (track.k === "ytl" || track.k === "scl");
+}
 
 // Sources that need a visible player on screen. YouTube's developer policies do
 // not allow a hidden or tiny embedded player, and SoundCloud's widget is treated
 // the same way. The bar has room for a limited number of these at once.
 export function isEmbed(track) {
-  return !!track && (track.k === "yt" || track.k === "ytl" || track.k === "sc");
+  return !!track && (track.k === "yt" || track.k === "ytl" || track.k === "sc" || track.k === "scl");
 }
 
 export function cleanText(value, max) {
@@ -199,14 +208,21 @@ export function parseLink(raw) {
     if (SC_API.test(url.pathname)) {
       return { track: { k: "sc", u: `https://api.soundcloud.com${url.pathname}`, t: "SoundCloud track", s: src } };
     }
-    if (/^\/playlists\//.test(url.pathname)) {
-      return { error: "SoundCloud playlists cannot be played in step. Paste the tracks one per line." };
+    if (SC_API_SET.test(url.pathname)) {
+      return { track: { k: "scl", u: `https://api.soundcloud.com${url.pathname}`, t: "SoundCloud playlist", s: src } };
     }
     return { error: "That SoundCloud link names no track." };
   }
   if (host === "soundcloud.com") {
+    // A set plays in SoundCloud's own widget, which moves through it like YouTube's
+    // player moves through a playlist. A private set's secret link (a fourth part)
+    // is not accepted: it would be handed to every player in the room.
     if (parts[1] === "sets") {
-      return { error: "SoundCloud playlists cannot be played in step. Paste the tracks one per line." };
+      const path = "/" + parts.join("/");
+      if (parts.length === 3 && SC_SET.test(path)) {
+        return { track: { k: "scl", u: `https://soundcloud.com${path}`, t: scTitle(path), s: src } };
+      }
+      return { error: "That SoundCloud playlist link does not look right. Use the link from its Share button, or make the playlist public." };
     }
     if (parts.length === 2 && !SC_NOT_TRACKS.has(parts[1]) && SC_PATH.test("/" + parts.join("/"))) {
       const path = "/" + parts.join("/");
@@ -341,6 +357,15 @@ export function readTrack(raw, { keepSource = false } = {}) {
       if (okHost && !url.search) return { k: "sc", u, t: t || "SoundCloud", ...extra };
     }
   }
+  if (raw.k === "scl") {
+    const u = safeUrl(raw.u);
+    if (u) {
+      const url = new URL(u);
+      const okHost = url.hostname === "soundcloud.com" ? SC_SET.test(url.pathname)
+        : url.hostname === "api.soundcloud.com" ? SC_API_SET.test(url.pathname) : false;
+      if (okHost && !url.search) return { k: "scl", u, t: t || "SoundCloud playlist", ...extra };
+    }
+  }
   return null;
 }
 
@@ -351,6 +376,7 @@ export function trackKey(track, sub = 0) {
   if (track.k === "yt") return "yt:" + track.v;
   if (track.k === "ytl") return `ytl:${track.l}:${sub}`;
   if (track.k === "sc") return "sc:" + track.u;
+  if (track.k === "scl") return `scl:${track.u}:${sub}`;
   return "a:" + track.u;
 }
 

@@ -9,7 +9,7 @@
 //   link.js       how the console talks to the radio bar
 // =============================================================
 
-export const RADIO_VERSION = "1.1B";
+export const RADIO_VERSION = "1.2";
 
 // The namespace. A key, never a URL — nothing is fetched from it. Changing it
 // orphans every room's radio state and every GM's library, so it needs a migration,
@@ -22,6 +22,7 @@ export const SCENE_KEY = `${ID}/scene`;     // Owlbear SCENE metadata: which rad
 export const LIBRARY_KEY = `${ID}/library`; // the GM's bar's storage: the library
 export const PREFS_KEY = `${ID}/prefs`;     // everyone's bar's storage: volumes, corner
 export const RESUME_KEY = `${ID}/resume`;   // the GM's bar's storage: what initiative interrupted
+export const RETUNE_KEY = `${ID}/retune`;   // the bar's storage: it was just moved while tuned in
 
 // The Dreams & Machines room record. Read, never written.
 export const DNM_ROOM_KEY = "com.thuknights.dnm-rolls/state";

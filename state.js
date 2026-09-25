@@ -5,7 +5,7 @@
 //
 //   { v: 2,
 //     music: { seq, track, sub, at, paused, list, i, label, nt, vol } | null,
-//     amb:   [ { id, track, at, vol, mode, min, max, label } ]   // up to 4
+//     amb:   [ { id, track, at, vol, mode, min, max, label, off } ]   // up to 4
 //     scene: "name of the last scene recalled", for display }
 //
 //   seq     bumped whenever the music moves to another track. The conductor only
@@ -14,7 +14,8 @@
 //   at      when position 0 was, in the GM's clock (ms). A loop layer's position is
 //           (now - at) modulo its length, which each player knows once loaded.
 //   paused  null while playing; the position in seconds while paused.
-//   sub     the video inside a YouTube playlist.
+//   sub     the video inside a YouTube playlist, or the track inside a SoundCloud one.
+//   off     a layer the GM has paused. It stays in the mix, silent, until resumed.
 //   list, i which of the GM's playlists and where in it. Ids only — players never
 //           need the list itself, and it would not fit.
 //   nt      the title of what is actually sounding, when only a player knows it
@@ -71,7 +72,9 @@ function readLayer(raw) {
   const id = /^[A-Za-z0-9_-]{1,24}$/.test(String(raw.id ?? "")) ? String(raw.id) : "";
   const spec = readLayerSpec(raw);
   if (!id || !spec) return null;
-  return { id, ...spec, at: clamp(raw.at, 0, 8.64e15, 0) };
+  const layer = { id, ...spec, at: clamp(raw.at, 0, 8.64e15, 0) };
+  // Only written when true: every byte of the room record is shared.
+  return raw.off === true ? { ...layer, off: true } : layer;
 }
 
 // Untrusted on the way out: any client in the room can write room metadata.
@@ -264,6 +267,16 @@ export function layerVolume(state, id, vol) {
   return done({ ...state, amb: state.amb.map((l) => (l.id === id ? { ...l, vol: clamp(vol, 0, 1, l.vol) } : l)) });
 }
 
+// Paused layers keep their place in the mix. A loop picks up where its clock says
+// it would be; nobody expects rain to resume mid-drop.
+export function layerPause(state, id, off) {
+  return done({ ...state, amb: state.amb.map((l) => {
+    if (l.id !== id) return l;
+    const { off: _, ...rest } = l;
+    return off ? { ...rest, off: true } : rest;
+  }) });
+}
+
 export function layersClear(state) {
   return done({ ...state, amb: [] });
 }
@@ -282,8 +295,10 @@ export function sceneApply(state, lib, sceneId, gmNow, rand = Math.random) {
   const key = (t) => JSON.stringify([t.k, t.u || t.v]);
   const amb = scene.amb.map((spec) => {
     const same = state.amb.find((l) => key(l.track) === key(spec.track) && l.mode === spec.mode);
+    // A layer the GM had paused plays again: recalling a scene means hearing it.
+    const { off: _, ...kept } = same || {};
     return same
-      ? { ...same, vol: spec.vol, min: spec.min, max: spec.max, label: spec.label }
+      ? { ...kept, vol: spec.vol, min: spec.min, max: spec.max, label: spec.label }
       : { id: "L" + Math.floor(rand() * 36 ** 6).toString(36), ...spec, at: gmNow };
   });
   next = { ...next, amb };
@@ -300,6 +315,19 @@ export function sceneApply(state, lib, sceneId, gmNow, rand = Math.random) {
     if (next.music) next = { ...next, music: { ...next.music, vol: scene.music.vol } };
   }
   return done(next);
+}
+
+// Pressing the scene that is playing stops it: its ambience goes, and its music if
+// the scene started it and it is still the music playing. Anything added since —
+// a layer the scene did not have, another playlist — is left alone.
+export function sceneStop(state, lib, sceneId) {
+  const scene = findScene(lib, sceneId);
+  if (!scene) return { error: "That scene is gone." };
+  const key = (t) => JSON.stringify([t.k, t.u || t.v || t.l]);
+  const mine = new Set(scene.amb.map((spec) => key(spec.track) + spec.mode));
+  const amb = state.amb.filter((l) => !mine.has(key(l.track) + l.mode));
+  const music = scene.music.mode === "list" && state.music && state.music.list === scene.music.list ? null : state.music;
+  return done({ ...state, amb, music, scene: "" });
 }
 
 // A scene made from whatever is playing now.

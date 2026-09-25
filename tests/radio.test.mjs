@@ -1,7 +1,7 @@
 // radio.test.mjs — every rule, without a browser or a room.
 //   node tests/radio.test.mjs
 import {
-  parseLink, parseLine, parseTrackList, formatTrackList, readTrack, trackKey, safeUrl, isEmbed, sunoFallback,
+  parseLink, parseLine, parseTrackList, formatTrackList, readTrack, trackKey, safeUrl, isEmbed, isSet, sunoFallback,
 } from "../sources.js";
 import {
   readLibrary, parseSoundList, formatSoundList, soundPages, MAX_TRACKS, MAX_LAYERS, emptyLibrary,
@@ -10,10 +10,12 @@ import {
   emptyState, readState, writeState, musicStart, musicAdvance, musicPause, musicResume, musicStop,
   musicVolume, musicSub, musicPosition, layerPosition, needsSeek, nextIndex, layerAdd, layerRemove,
   layerVolume, sceneApply, sceneFromState, snapshot, restore, embedCount, stateSize, displayTitle,
-  MAX_EMBEDS, STATE_BUDGET,
+  MAX_EMBEDS, STATE_BUDGET, layerPause, sceneStop,
 } from "../state.js";
 import { diffDnm, planReaction, rollCues, sortCues } from "../reactions.js";
-import { readCommand, command, NS, GM_ONLY } from "../link.js";
+import {
+  readCommand, command, NS, GM_ONLY, OPS, stamp, toPieces, makeAssembler, makeDeduper, PIECE,
+} from "../link.js";
 import { readPrefs, barPopover, barSize, STATE_KEY } from "../radio.js";
 import { PACKS, PACK_BASE, addPack, packInstalled, credits } from "../packs.js";
 import { readdirSync, existsSync } from "fs";
@@ -130,7 +132,21 @@ const YT = (v) => ({ k: "yt", v, t: "video " + v });
   ok("tracking parameters are dropped", parseLink("https://soundcloud.com/a/b?si=123&utm_source=x").track?.u === "https://soundcloud.com/a/b");
   const emb = parseTrackList('<iframe src="https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/123456&color=%23ff5500"></iframe>');
   ok("SoundCloud's embed code works", emb.tracks[0]?.k === "sc" && emb.tracks[0].u === "https://api.soundcloud.com/tracks/123456");
-  ok("a SoundCloud set says to paste tracks", /one per line/.test(parseLink("https://soundcloud.com/a/sets/b").error || ""));
+  // 1.2: a set plays in SoundCloud's widget, moved through like a YouTube playlist.
+  // This is the link Gus pasted, share parameters and all.
+  const set = parseLink("https://soundcloud.com/matthew-hawkins-54089931/sets/fantasy-ambience?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing");
+  ok("a SoundCloud set is a playlist", set.track?.k === "scl" && set.track.u === "https://soundcloud.com/matthew-hawkins-54089931/sets/fantasy-ambience");
+  ok("without its share parameters", !/\?/.test(set.track.u));
+  ok("and titled from its link", set.track.t === "fantasy ambience");
+  ok("the plain set link works too", parseLink("https://soundcloud.com/matthew-hawkins-54089931/sets/fantasy-ambience").track?.k === "scl");
+  ok("an API playlist id is a set", parseLink("https://api.soundcloud.com/playlists/123").track?.k === "scl");
+  ok("a private set's secret link is refused", !!parseLink("https://soundcloud.com/a/sets/b/s-XyZ12").error);
+  ok("a set needs a visible player and is a set", isEmbed(set.track) && isSet(set.track));
+  ok("a set survives the room", readTrack(set.track)?.k === "scl");
+  ok("a set on another host is refused", readTrack({ k: "scl", u: "https://evil.test/a/sets/b" }) === null);
+  ok("a set's key moves with its track", trackKey(set.track, 0) !== trackKey(set.track, 1));
+  ok("a set cannot be a sound", /playlist cannot be a sound/.test(parseSoundList("Set | https://soundcloud.com/a/sets/b").errors[0]?.error || ""));
+  ok("nor an ambience layer", readLibrary({ v: 2, scenes: [{ id: "s", name: "S", amb: [{ track: set.track }] }] }).scenes[0].amb.length === 0);
   ok("a SoundCloud profile page is not a track", !!parseLink("https://soundcloud.com/gsgrimoire/likes").error);
   ok("a SoundCloud short link says what to do", /soundcloud\.com\//.test(parseLink("https://on.soundcloud.com/abc").error || ""));
   ok("SoundCloud needs a visible player", isEmbed(sc.track));
@@ -339,6 +355,24 @@ const YT = (v) => ({ k: "yt", v, t: "video " + v });
   ok("a scene can change the music, and set its volume", fight.music.label === "Combat" && fight.music.vol === 0.9 && fight.amb.length === 0);
   ok("a scene can stop the music", sceneApply(tav, lib, "s-hush", 0).state.music === null);
 
+  // 1.2: pressing the playing scene stops it.
+  const stopped = sceneStop(tav, lib, "s-tav").state;
+  ok("stopping a scene stops its layers and its music", stopped.amb.length === 0 && stopped.music === null && stopped.scene === "");
+  const extra = layerAdd(tav, { track: A("owls") }, 3000, () => 0.9).state;
+  const kept = sceneStop(extra, lib, "s-tav").state;
+  ok("but leaves a layer added since", kept.amb.length === 1 && kept.amb[0].track.u.includes("owls"));
+  ok("and music the scene did not start", sceneStop(fight, lib, "s-tav").state.music.label === "Combat");
+  ok("stopping a scene that is gone is refused", !!sceneStop(tav, lib, "nope").error);
+
+  // 1.2: a layer can be paused, and stays in the mix.
+  const id0 = tav.amb[0].id;
+  const paused = layerPause(tav, id0, true).state;
+  ok("a paused layer is marked off", paused.amb[0].off === true && paused.amb.length === 2);
+  ok("the mark survives the room", readState({ k: paused }, "k").amb[0].off === true);
+  ok("only true is written", !("off" in layerPause(paused, id0, false).state.amb[0]));
+  ok("recalling its scene plays it again", !("off" in sceneApply(paused, lib, "s-tav", 5000).state.amb[0]));
+  ok("a stray off is not true", !("off" in readState({ k: { v: 2, amb: [{ ...tav.amb[0], off: "yes" }] } }, "k").amb[0]));
+
   const made = sceneFromState(tav, { id: "new", name: "Mine" });
   ok("a scene can be made from what is playing", made.music.list === "tav" && made.amb.length === 2 && readLibrary({ v: 2, lists: lib.lists, scenes: [made] }).scenes.length === 1);
 
@@ -491,6 +525,32 @@ const YT = (v) => ({ k: "yt", v, t: "video " + v });
   ok("every manifest address is https on the Pages site",
     [m.icon, m.action.icon, m.action.popover].every((u) => /^https:\/\/gsgrimoire\.github\.io\/obr-radio\//.test(u)));
   ok("the popover has a size", m.action.width > 0 && m.action.height > 0 && !!m.action.title);
+}
+
+// -------------------------------------------------------------
+// The link's two routes (1.1C)
+// -------------------------------------------------------------
+{
+  ok("the new commands are known", ["scene.stop", "layer.pause", "lib.set", "react.set"].every((op) => OPS.has(op) && GM_ONLY.has(op)));
+  const m = stamp({ ns: NS, t: "hello" }, () => 0.5);
+  ok("a message is stamped once", !!m.mid && stamp(m).mid === m.mid);
+  ok("a small message travels whole", toPieces(m).length === 1 && toPieces(m)[0] === m);
+  const big = stamp({ ns: NS, t: "state", lib: { text: "x".repeat(PIECE * 2 + 17) } });
+  const pieces = toPieces(big);
+  ok("a big one is cut", pieces.length === 3 && pieces.every((p) => p.t === "piece" && p.mid === big.mid));
+  const join = makeAssembler();
+  const out = [...pieces].reverse().map(join);
+  ok("and put back together, in any order", out[0] === null && out[1] === null && JSON.stringify(out[2]) === JSON.stringify(big));
+  let t = 0;
+  const slow = makeAssembler(() => t);
+  slow(pieces[0]); t = 30000; slow({ ns: NS, t: "piece", mid: "other", i: 0, n: 2, part: "" });
+  ok("an unfinished message is forgotten", slow(pieces[1]) === null && slow(pieces[2]) === null);
+  ok("a hostile piece is dropped", join({ ns: NS, t: "piece", mid: "a", i: 5, n: 2, part: "" }) === null && join({ ns: NS, t: "piece", mid: "a", i: 0, n: 1e6, part: "" }) === null);
+  ok("a foreign message is not ours", join({ ns: "else" }) === null);
+  const first = makeDeduper(2);
+  ok("the second copy is dropped", first(m) === true && first(m) === false);
+  first({ mid: "b" }); first({ mid: "c" });
+  ok("and the memory is bounded", first(m) === true);
 }
 
 console.log(`radio: ${passed} passed, ${failed} failed`);

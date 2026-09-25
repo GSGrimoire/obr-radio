@@ -13,7 +13,9 @@
 // Every piece of library text is untrusted (a backup may be anybody's), so
 // nothing here is ever put into the page as HTML: text goes in as text.
 // =============================================================
-import { NS, command, isFromBar, channelName } from "./link.js";
+import {
+  NS, command, isFromBar, channelName, LINK_OBR_CHANNEL, stamp, toPieces, makeAssembler, makeDeduper,
+} from "./link.js";
 import { parseTrackList, formatTrackList, parseAny, isEmbed, KINDS } from "./sources.js";
 import {
   readLibrary, parseSoundList, formatSoundList, soundPages, newId, findScene, MAX_LAYERS,
@@ -63,12 +65,19 @@ function options(select, items, current) {
 // Re-rendering a section while someone is typing in it, or has a menu open,
 // throws their work away. Such a section is marked stale and redrawn when they
 // leave it.
+//
+// "When they leave it" is NOT the moment focus leaves: pressing a button moves
+// focus off the box being typed in at the press, and a redraw then replaces the
+// button between the press and the release — the click is lost, and the button
+// has to be pressed twice. So nothing is redrawn while a pointer is down; the
+// stale sections wait for the click to land first.
 const stale = new Map();
+let pointerDown = false;
 function section(id, build) {
   const box = $(id);
   if (!box) return;
   const active = document.activeElement;
-  if (active && box.contains(active) && /^(INPUT|SELECT|TEXTAREA)$/.test(active.tagName)) {
+  if (pointerDown || (active && box.contains(active) && /^(INPUT|SELECT|TEXTAREA)$/.test(active.tagName))) {
     stale.set(id, build);
     return;
   }
@@ -77,11 +86,16 @@ function section(id, build) {
   // way, or an inner list is turned into the text "[object HTMLDivElement]".
   box.replaceChildren(...[build()].flat(Infinity).filter(Boolean));
 }
-document.addEventListener("focusout", () => {
-  setTimeout(() => {
-    for (const [id, build] of [...stale]) section(id, build);
-  }, 0);
-});
+function flushStale() {
+  for (const [id, build] of [...stale]) section(id, build);
+}
+document.addEventListener("pointerdown", () => { pointerDown = true; }, true);
+// The click is dispatched after pointerup in the same turn, so a timeout lands
+// after it.
+const release = () => { pointerDown = false; setTimeout(flushStale, 0); };
+document.addEventListener("pointerup", release, true);
+document.addEventListener("pointercancel", release, true);
+document.addEventListener("focusout", () => { setTimeout(() => { if (!pointerDown) flushStale(); }, 0); });
 
 let toastTimer = 0;
 function toast(msg, bad = false) {
@@ -110,6 +124,7 @@ function call(op, args = {}) {
   });
 }
 
+let lastReport = "";
 function onBar(data) {
   if (!isFromBar(data)) return;
   lastHeard = Date.now();
@@ -118,6 +133,12 @@ function onBar(data) {
     if (resolve) { waiting.delete(data.id); resolve(data); }
     return;
   }
+  // The bar answers every hello with a full report. One that says nothing new
+  // redraws nothing: a redraw under someone's pointer costs them their click.
+  const { mid: _, ...report } = data;
+  const text = JSON.stringify(report);
+  if (text === lastReport && model) { renderHeader(); return; }
+  lastReport = text;
   model = {
     ...data,
     lib: data.lib ? readLibrary(data.lib) : null,
@@ -148,12 +169,8 @@ function renderHeader() {
   const nobar = $("c-nobar");
   nobar.hidden = connected();
   if (!connected()) {
-    $("c-nobar-text").textContent = POPOUT
-      ? (window.opener
-        ? "Waiting for the radio bar… If this does not connect, press ⧉ on the radio bar in Owlbear again."
-        : "This window is not connected. In Owlbear, press ⧉ on the radio bar to open the console from there.")
-      : "The radio bar is not open. It is where the sound plays, and it has to be open for this panel to work.";
-    $("c-open-bar").hidden = POPOUT || !obr;
+    $("c-nobar-text").textContent = noBarText();
+    $("c-open-bar").hidden = POPOUT;
   }
   const gm = connected() && model.role === "GM";
   $("c-tabs").hidden = !gm;
@@ -177,6 +194,8 @@ function renderMe() {
   if (s.amb.length) bits.push(s.amb.map((l) => l.label).join(", "));
   if (s.scene) bits.push("Scene: " + s.scene);
   if (!model.tuned) bits.push("Press Tune in on the radio bar to hear it.");
+  else if (model.info.click) bits.push("A video on the radio bar is waiting for a click: press ▶ on it once.");
+  if (model.info.held) bits.push("You paused a video on your bar. Press play on it to hear it again.");
   $("c-now-sub").textContent = bits.join(" · ");
   const p = model.prefs;
   for (const [id, key] of [["c-v-music", "music"], ["c-v-amb", "amb"], ["c-v-fx", "fx"]]) {
@@ -241,18 +260,25 @@ function soundOptions(lib, filter = () => true) {
 
 function renderAmb() {
   const { lib, state } = model;
-  const rows = state.amb.map((l) => h("div", { class: "layer" },
-    h("span", { class: "layer-name", text: l.label, title: KINDS[l.track.k] }),
-    h("span", { class: "badge", text: l.mode === "scatter" ? `every ${l.min}–${l.max}s` : "loop" }),
-    h("input", { type: "range", min: 0, max: 100, value: String(Math.round(l.vol * 100)), "aria-label": l.label + " level",
-      onchange: (ev) => call("layer.vol", { id: l.id, v: Number(ev.target.value) / 100 }) }),
-    h("button", { class: "ghost", title: "Stop this layer", "aria-label": "Stop " + l.label, onclick: () => call("layer.remove", { id: l.id }) }, "×")));
+  // Every layer has its own controls: pause, level, stop.
+  const rows = state.amb.map((l) => {
+    const name = l.label || KINDS[l.track.k] || "Layer";
+    return h("div", { class: "layer" + (l.off ? " off" : "") },
+      h("button", { class: "ghost", title: l.off ? "Play this layer" : "Pause this layer",
+        "aria-label": (l.off ? "Play " : "Pause ") + name, onclick: () => call("layer.pause", { id: l.id, off: !l.off }) }, l.off ? "▶" : "❚❚"),
+      h("span", { class: "layer-name", text: name, title: KINDS[l.track.k] }),
+      h("span", { class: "badge", text: l.off ? "paused" : l.mode === "scatter" ? `every ${l.min}–${l.max}s` : "loop" }),
+      h("input", { type: "range", min: 0, max: 100, value: String(Math.round(l.vol * 100)), "aria-label": name + " level",
+        onchange: (ev) => call("layer.vol", { id: l.id, v: Number(ev.target.value) / 100 }) }),
+      h("button", { class: "ghost", title: "Stop this layer", "aria-label": "Stop " + name, onclick: () => call("layer.remove", { id: l.id }) }, "×"));
+  });
 
   const sel = soundOptions(lib, (s) => layerDraft.mode === "loop" || !isEmbed(s.track));
   sel.value = layerDraft.sound;
   sel.addEventListener("change", (ev) => { layerDraft.sound = ev.target.value; });
   const link = h("input", { type: "text", placeholder: "…or paste a link", value: layerDraft.link,
-    oninput: (ev) => { layerDraft.link = ev.target.value; } });
+    oninput: (ev) => { layerDraft.link = ev.target.value; },
+    onkeydown: (ev) => { if (ev.key === "Enter") add(); } });
   const mode = options(h("select", { "aria-label": "How it plays", onchange: (ev) => { layerDraft.mode = ev.target.value; section("c-amb", renderAmb); } }),
     [["loop", "Loop"], ["scatter", "Now and then"]], layerDraft.mode);
   const interval = layerDraft.mode === "scatter" ? h("span", { class: "inline" }, "every ",
@@ -284,6 +310,7 @@ function renderAmb() {
     state.amb.length < MAX_LAYERS ? h("div", { class: "row" }, link, interval, h("button", { class: "primary", onclick: add }, "Add")) : null,
     state.amb.length ? h("button", { class: "ghost small", onclick: () => call("layer.clear") }, "Stop all ambience") : null,
     model.info.embeds >= MAX_EMBEDS ? h("p", { class: "muted small", text: `${MAX_EMBEDS} video players are showing, which is all the bar holds.` }) : null,
+    h("p", { class: "muted small", text: "Enter in the link box adds it." }),
   ];
 }
 
@@ -294,11 +321,16 @@ let sceneDraft = { name: "", keepMusic: false };
 
 function renderScenes() {
   const { lib, state } = model;
-  const buttons = lib.scenes.map((s) => h("button", {
-    class: "scene" + (state.scene === s.name ? " on" : ""),
-    title: sceneSummary(s, lib),
-    onclick: () => call("scene.recall", { id: s.id }),
-  }, s.name));
+  // The scene that is playing is pressed again to stop it.
+  const buttons = lib.scenes.map((s) => {
+    const on = state.scene === s.name;
+    return h("button", {
+      class: "scene" + (on ? " on" : ""),
+      "aria-pressed": String(on),
+      title: (on ? "Playing — press to stop it\n" : "") + sceneSummary(s, lib),
+      onclick: () => call(on ? "scene.stop" : "scene.recall", { id: s.id }),
+    }, s.name);
+  });
   const save = async () => {
     const name = sceneDraft.name.trim();
     if (!name) { toast("Name the scene first.", true); return; }
@@ -308,6 +340,7 @@ function renderScenes() {
   return [
     h("h2", { text: "Scenes" }),
     buttons.length ? h("div", { class: "scenes" }, buttons) : h("p", { class: "muted", text: "A scene is a moment's sound: a playlist and its ambience, recalled in one press. Set up what should play, then save it here — or add the Places & weather starter pack for ten ready-made ones." }),
+    buttons.length ? h("p", { class: "muted small", text: "Press the lit scene again to stop it." }) : null,
     h("div", { class: "row" },
       h("input", { type: "text", maxlength: 40, placeholder: "Name what is playing now…", value: sceneDraft.name,
         oninput: (ev) => { sceneDraft.name = ev.target.value; }, onkeydown: (ev) => { if (ev.key === "Enter") save(); } }),
@@ -448,7 +481,7 @@ function renderLists() {
     h("h2", { text: "Playlists" }),
     h("div", { class: "row" }, pick, h("button", { onclick: create }, "New"), list ? h("button", { onclick: del }, "Delete") : null),
     list ? h("div", { class: "row" }, name) : null,
-    h("p", { class: "muted small", text: "One link per line, \"Title | link\" to name it. Mix YouTube videos and playlists, Suno songs, SoundCloud tracks, Dropbox and audio-file links. Embed codes can be pasted whole." }),
+    h("p", { class: "muted small", text: "One link per line, \"Title | link\" to name it. Mix YouTube videos and playlists, Suno songs, SoundCloud tracks and playlists, Dropbox and audio-file links. Embed codes can be pasted whole." }),
     text,
     listErrors.map((e) => h("div", { class: "error", text: `Line ${e.line}: ${e.error}` })),
     list ? h("div", { class: "row" }, h("button", { class: "primary", onclick: save }, "Save"),
@@ -511,7 +544,9 @@ function renderSceneList() {
   const rows = lib.scenes.map((s) => h("div", { class: "scene-row" },
     h("div", {}, h("strong", { text: s.name }), h("div", { class: "muted small pre", text: sceneSummary(s, lib) })),
     h("div", { class: "row" },
-      h("button", { onclick: () => call("scene.recall", { id: s.id }) }, "Play"),
+      model.state.scene === s.name
+        ? h("button", { onclick: () => call("scene.stop", { id: s.id }) }, "Stop")
+        : h("button", { onclick: () => call("scene.recall", { id: s.id }) }, "Play"),
       h("button", { title: "Replace this scene with what is playing now", onclick: () => call("scene.save", { id: s.id, keepMusic: s.music.mode === "keep" }).then((r) => !r.error && toast(`Updated "${s.name}".`)) }, "Update from now"),
       h("button", { onclick: (ev) => confirmTwice(ev.currentTarget, "Delete", () => call("lib.put", { lib: { ...lib, scenes: lib.scenes.filter((x) => x.id !== s.id) } })) }, "Delete"))));
   return [
@@ -526,17 +561,18 @@ function renderSceneList() {
 function renderObrScene() {
   const { lib, info } = model;
   const bound = info.obrScene.bound;
-  const pick = options(h("select", { "aria-label": "Radio scene for this Owlbear scene" }),
+  // Takes effect the moment it is picked: no second button to miss.
+  const pick = options(h("select", { "aria-label": "Radio scene for this Owlbear scene", disabled: !info.obrScene.ready,
+    onchange: (ev) => call("scene.bind", { id: ev.target.value }).then((r) => !r.error && toast("Saved for this Owlbear scene.")) }),
     [["", "— nothing —"], ...lib.scenes.map((s) => [s.id, s.name])], bound);
   return [
     h("h2", { text: "Owlbear scenes" }),
     info.obrScene.ready
       ? h("p", { text: bound && findScene(lib, bound) ? `This Owlbear scene plays "${findScene(lib, bound).name}" when it opens.` : "This Owlbear scene has no radio scene." })
       : h("p", { class: "muted", text: "Open a scene in Owlbear to give it a radio scene." }),
-    h("div", { class: "row" }, pick,
-      h("button", { disabled: !info.obrScene.ready, onclick: () => call("scene.bind", { id: pick.value }).then((r) => !r.error && toast("Done.")) }, "Set for this Owlbear scene")),
+    h("div", { class: "row" }, pick),
     h("label", { class: "inline" },
-      h("input", { type: "checkbox", checked: lib.autoScenes, onchange: (ev) => call("lib.put", { lib: { ...lib, autoScenes: ev.target.checked } }) }),
+      h("input", { type: "checkbox", checked: lib.autoScenes, onchange: (ev) => call("lib.set", { key: "autoScenes", value: ev.target.checked }) }),
       " Play the radio scene when I switch Owlbear scenes"),
   ];
 }
@@ -545,16 +581,20 @@ function renderReactions() {
   const { lib, info } = model;
   const soundItems = [["", "—"], ...lib.sounds.filter((s) => s.track.k === "a").map((s) => [s.id, `${s.page}: ${s.name}`])];
   const sceneItems = [["", "—"], ...lib.scenes.map((s) => [s.id, s.name])];
-  const draft = JSON.parse(JSON.stringify(lib.reactions));
+  // Each change is saved as it is made, one reaction at a time (react.set), so
+  // there is no Save to forget and no redraw can lose a choice.
   const rows = CUES.map(([cue, label]) => {
-    const r = draft[cue] || { sound: "", scene: "", restore: false };
-    draft[cue] = r;
+    const r = { sound: "", scene: "", restore: false, ...(lib.reactions[cue] || {}) };
+    const set = (patch) => {
+      Object.assign(r, patch);
+      call("react.set", { cue, ...r }).then((res) => !res.error && toast(`Saved: ${label}.`));
+    };
     return h("tr", {},
       h("th", { scope: "row", text: label }),
-      h("td", {}, options(h("select", { "aria-label": label + ": sound", onchange: (ev) => { r.sound = ev.target.value; } }), soundItems, r.sound)),
-      h("td", {}, options(h("select", { "aria-label": label + ": scene", onchange: (ev) => { r.scene = ev.target.value; } }), sceneItems, r.scene)),
+      h("td", {}, options(h("select", { "aria-label": label + ": sound", onchange: (ev) => set({ sound: ev.target.value }) }), soundItems, r.sound)),
+      h("td", {}, options(h("select", { "aria-label": label + ": scene", onchange: (ev) => set({ scene: ev.target.value }) }), sceneItems, r.scene)),
       h("td", {}, cue === "combatEnd" ? h("label", { class: "inline small", title: "Bring back whatever was playing when initiative started" },
-        h("input", { type: "checkbox", checked: r.restore, onchange: (ev) => { r.restore = ev.target.checked; } }), " go back") : null));
+        h("input", { type: "checkbox", checked: r.restore, onchange: (ev) => set({ restore: ev.target.checked }) }), " go back") : null));
   });
   return [
     h("h2", { text: "Reactions to Dreams & Machines" }),
@@ -565,7 +605,7 @@ function renderReactions() {
     h("table", { class: "react" },
       h("thead", {}, h("tr", {}, h("th", { text: "When" }), h("th", { text: "Sound" }), h("th", { text: "Scene" }), h("th", { text: "" }))),
       h("tbody", {}, rows)),
-    h("button", { class: "primary", onclick: () => call("lib.put", { lib: { ...lib, reactions: draft } }).then((r) => !r.error && toast("Reactions saved.")) }, "Save reactions"),
+    h("p", { class: "muted small", text: "Changes are saved as you make them." }),
   ];
 }
 
@@ -577,10 +617,10 @@ function renderSettings() {
   return [
     h("h2", { text: "Settings" }),
     h("label", { class: "inline" }, h("input", { type: "checkbox", checked: lib.shuffle,
-      onchange: (ev) => call("lib.put", { lib: { ...lib, shuffle: ev.target.checked } }) }), " Shuffle playlists"),
+      onchange: (ev) => call("lib.set", { key: "shuffle", value: ev.target.checked }) }), " Shuffle playlists"),
     h("label", { class: "inline" }, "Fade in and out over ",
       h("input", { type: "number", class: "num", min: 0, max: 6, step: 0.5, value: String(lib.fadeSeconds),
-        onchange: (ev) => call("lib.put", { lib: { ...lib, fadeSeconds: Number(ev.target.value) } }) }), " seconds"),
+        onchange: (ev) => call("lib.set", { key: "fadeSeconds", value: Number(ev.target.value) }) }), " seconds"),
     h("p", { class: "muted small", text: POPOUT
       ? "This window is a remote control for the radio bar in Owlbear. Close it any time; the sound carries on."
       : "Want the soundboard on another screen? Press ⧉ on the radio bar to open this console in its own window." }),
@@ -664,15 +704,41 @@ function render() {
 // -------------------------------------------------------------
 // Start
 // -------------------------------------------------------------
+// Where the panel is in reaching the bar, so the message can say what is actually
+// wrong instead of one sentence for every case.
+const link = { sdk: "loading", sdkSince: Date.now(), openedAt: 0, autoOpened: false };
+
 async function openBar() {
-  if (!obr) return;
+  if (!obr) { toast("Owlbear has not finished loading this panel yet. Try again in a moment.", true); return; }
   let prefs = readPrefs(null);
   try { prefs = readPrefs(JSON.parse(localStorage.getItem(PREFS_KEY) || "null")); } catch (err) { /* default */ }
   let viewport = null;
   try { viewport = { width: await obr.viewport.getWidth(), height: await obr.viewport.getHeight() }; } catch (err) { /* default */ }
+  link.openedAt = Date.now();
   await obr.popover.open(barPopover({ url: new URL("bar.html", location.href).href, corner: prefs.corner, viewport }));
+  hello();
 }
 $("c-open-bar").addEventListener("click", openBar);
+
+// What to say while there is no bar to talk to.
+function noBarText() {
+  if (POPOUT) {
+    return window.opener
+      ? "Waiting for the radio bar… If this does not connect, press ⧉ on the radio bar in Owlbear again."
+      : "This window is not connected. In Owlbear, press ⧉ on the radio bar to open the console from there.";
+  }
+  if (link.sdk === "loading") {
+    return Date.now() - link.sdkSince > 8000
+      ? "Owlbear has not answered this panel. Reload the room (not just the tab), then open Radio again."
+      : "Waiting for Owlbear…";
+  }
+  if (link.openedAt && Date.now() - link.openedAt < 6000) return "Opening the radio bar at the edge of the map…";
+  if (link.openedAt) {
+    return "The radio bar is open but not answering. Close it with its × and press Open the radio. "
+      + "If it happens again, reload the room.";
+  }
+  return "The radio bar is not open. It is where the sound plays, and it has to be open for this panel to work.";
+}
 
 async function start() {
   render();
@@ -687,14 +753,35 @@ async function start() {
     const mod = await import("./sdk.js");
     obr = mod.default;
     await new Promise((resolve) => obr.onReady(resolve));
-    const bc = new BroadcastChannel(channelName(obr.room.id));
-    bc.onmessage = (ev) => onBar(ev.data);
-    send = (msg) => bc.postMessage(msg);
+    link.sdk = "ready";
+    // Both routes to the bar (see link.js); the second copy of anything is dropped.
+    const assemble = makeAssembler();
+    const firstCopy = makeDeduper();
+    const receive = (data) => {
+      const msg = assemble(data);
+      if (msg && firstCopy(msg)) onBar(msg);
+    };
+    let bc = null;
+    try {
+      bc = new BroadcastChannel(channelName(obr.room.id));
+      bc.onmessage = (ev) => receive(ev.data);
+    } catch (err) { /* Owlbear's own route still works */ }
+    obr.broadcast.onMessage(LINK_OBR_CHANNEL, (ev) => receive(ev && ev.data));
+    send = (msg) => {
+      const m = stamp(msg);
+      try { if (bc) bc.postMessage(m); } catch (err) { /* closed */ }
+      for (const piece of toPieces(m)) obr.broadcast.sendMessage(LINK_OBR_CHANNEL, piece, { destination: "LOCAL" }).catch(() => {});
+    };
     // Give the GM's console room to breathe; players only need the top card.
     try {
       const role = await obr.player.getRole();
       if (role === "GM") { await obr.action.setWidth(520); await obr.action.setHeight(760); }
     } catch (err) { /* keep the manifest size */ }
+    // Nobody should have to find a second button before anything works: when no bar
+    // answers, open it. Once per panel — closing the bar is a choice to respect.
+    setTimeout(() => {
+      if (!connected() && !link.autoOpened) { link.autoOpened = true; openBar(); }
+    }, 1500);
   }
   hello();
   // Ask often while unanswered; otherwise every five seconds, which is how a bar

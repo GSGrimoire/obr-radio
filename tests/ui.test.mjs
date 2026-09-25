@@ -18,7 +18,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { chromium } from "playwright";
 import { serve } from "./serve.mjs";
-import { STATE_KEY, LIBRARY_KEY, DNM_ROOM_KEY, CHANNEL, SCENE_KEY, PREFS_KEY, RESUME_KEY } from "../radio.js";
+import { STATE_KEY, LIBRARY_KEY, DNM_ROOM_KEY, CHANNEL, SCENE_KEY, PREFS_KEY, RESUME_KEY, RETUNE_KEY } from "../radio.js";
 import { parseTrackList } from "../sources.js";
 
 let pass = 0, fail = 0;
@@ -78,6 +78,12 @@ const st = {
   action: [],
 };
 const on = (list) => (cb) => { list.push(cb); return () => {}; };
+// "LOCAL" means every frame of this one Owlbear client: here, every page of the
+// browser context. Carried on the test's own channel, captured before a page can
+// take BroadcastChannel away from the app (see noBC).
+const RealBC = window.__RealBC || window.BroadcastChannel;
+const local = RealBC ? new RealBC("__stub_local") : null;
+if (local) local.onmessage = (ev) => { (subs.msg[ev.data.ch] || []).forEach((cb) => cb({ data: ev.data.data, connectionId: ev.data.conn })); };
 function pushMeta() { const snap = clone(st.meta); subs.meta.forEach((cb) => cb(snap)); }
 const OBR = {
   isAvailable: true,
@@ -112,6 +118,7 @@ const OBR = {
       if (opts && (opts.destination === "ALL" || opts.destination === "LOCAL")) {
         (subs.msg[ch] || []).forEach((cb) => cb({ data: clone(data), connectionId: st.conn }));
       }
+      if (opts && opts.destination === "LOCAL" && local) local.postMessage({ ch, data: clone(data), conn: st.conn });
     },
   },
   popover: {
@@ -172,6 +179,9 @@ window.YT = {
     loadVideoById(o) { this.calls.push(["loadVideoById", o]); this.vid = o.videoId; this.list = null; this.t = o.startSeconds || 0; this.fire(1); }
     loadPlaylist(o) { this.calls.push(["loadPlaylist", o]); this.list = o; this.idx = o.index || 0; this.t = o.startSeconds || 0; this.fire(1); }
     playVideoAt(i) { this.calls.push(["playVideoAt", i]); this.idx = i; this.t = 0; this.fire(1); }
+    nextVideo() { this.calls.push(["nextVideo"]); this.idx += 1; this.t = 0; this.fire(1); }
+    // What the player does when a person clicks it.
+    hand(s) { this.state = s; this.opts.events.onStateChange({ data: s, target: this }); }
     playVideo() { this.calls.push(["playVideo"]); this.fire(1); }
     pauseVideo() { this.calls.push(["pauseVideo"]); this.fire(2); }
     stopVideo() { this.calls.push(["stopVideo"]); this.state = 5; }
@@ -202,6 +212,15 @@ window.SC = { Widget: Object.assign(function (frame) {
     seekTo(ms) { this.calls.push(["seekTo", ms]); },
     setVolume(v) { this.vol = v; },
     getDuration(cb) { cb(120000); },
+    // A set, when the frame's url names one: three tracks.
+    idx: 0,
+    isSet() { return /%2Fsets%2F/.test(frame.src); },
+    getSounds(cb) { cb(this.isSet() ? [{ title: "One" }, { title: "Two" }, { title: "Three" }] : [{ title: "Only" }]); },
+    getCurrentSoundIndex(cb) { cb(this.idx); },
+    getCurrentSound(cb) { cb({ title: this.isSet() ? ["One", "Two", "Three"][this.idx] : "Only" }); },
+    skip(i) { this.calls.push(["skip", i]); this.idx = i; this.fire("play"); },
+    // What the widget does when a person presses its button.
+    hand(ev) { this.fire(ev); },
   };
   window.__sc = w; window.__scs.push(w);
   return w;
@@ -247,7 +266,7 @@ async function routes(page) {
 const GM_ONLY = [{ role: "GM", connectionId: "conn-gm" }, { role: "PLAYER", connectionId: "conn-x" }];
 
 async function open(page, { file = "bar.html", role = "PLAYER", conn = "conn-self", players, meta = {}, library = null,
-  prefs = null, sceneMeta, sceneReady } = {}) {
+  prefs = null, sceneMeta, sceneReady, noBC = false } = {}) {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   // Short, so a page whose script died fails in seconds instead of hanging on
@@ -256,12 +275,14 @@ async function open(page, { file = "bar.html", role = "PLAYER", conn = "conn-sel
   await routes(page);
   await page.addInitScript(({ want, lib, libKey, prefs, prefsKey }) => {
     window.__want = want;
+    // A frame where BroadcastChannel does not work: only Owlbear's route is left.
+    if (want.noBC) { window.__RealBC = window.BroadcastChannel; window.BroadcastChannel = undefined; }
     try {
       if (lib && !localStorage.getItem("__seeded")) { localStorage.setItem(libKey, JSON.stringify(lib)); localStorage.setItem("__seeded", "1"); }
       if (prefs) localStorage.setItem(prefsKey, JSON.stringify(prefs));
     } catch (err) { /* ignore */ }
   }, {
-    want: { role, conn, meta, players: players || GM_ONLY, sceneMeta, sceneReady },
+    want: { role, conn, meta, players: players || GM_ONLY, sceneMeta, sceneReady, noBC },
     lib: library, libKey: LIBRARY_KEY, prefs, prefsKey: PREFS_KEY,
   });
   await page.goto(site.origin + "/" + file);
@@ -499,7 +520,10 @@ const DNM = { threat: 0, momentum: 2, initiative: null, epochs: { breather: 0, b
   ok("GM: initiative ending brings the music back", s.music.list === "ex" && s.music.track.t === "Long");
   ok(`GM: where it left off (${pos.toFixed(1)}s, was ${beforeFight.t.toFixed(1)}s)`, Math.abs(pos - beforeFight.t) < 3);
   await sleep(700);
-  ok("GM: the video is put away", (await page.evaluate(() => window.__yts.every((y) => y.destroyed))) && !(await page.evaluate(() => document.body.classList.contains("video"))));
+  // Put away = destroyed, or kept stopped and out of sight for the next video.
+  ok("GM: the video is put away", (await page.evaluate(() => window.__yts.every((y) => y.destroyed || y.calls.at(-1)[0] === "stopVideo")))
+    && (await page.$$eval(".embed-tile", (n) => n.filter((x) => x.style.display !== "none").length)) === 0
+    && !(await page.evaluate(() => document.body.classList.contains("video"))));
 
   const log = [{ id: "r1", pass: false, diff: 2, comp: 2, conceal: "hidden", detail: [{ kind: "complication" }] }];
   const before = (await sent(page)).filter((m) => m.data.type === "sound").length;
@@ -655,14 +679,13 @@ const DNM = { threat: 0, momentum: 2, initiative: null, epochs: { breather: 0, b
 
   await con.click('button[data-tab="reactions"]');
   await sleep(300);
+  // Saved as it is chosen: no button to press, nothing a redraw can lose.
   await con.selectOption("#c-react select[aria-label='Threat goes up: sound']", { label: "Combat: Clash" });
-  await con.click("#c-react button:has-text('Save reactions')");
   await sleep(400);
   const lib = await bar.evaluate((k) => JSON.parse(localStorage.getItem(k)), LIBRARY_KEY);
   ok("console: a reaction is saved", !!lib.reactions.threatUp && lib.reactions.threatUp.sound === lib.sounds[0].id);
   ok("console: without D&M it says the reactions wait for it", /not in this room/.test(await con.textContent("#c-react")));
   await con.selectOption("#c-obrscene select", { label: "Harbour" });
-  await con.click("#c-obrscene button:has-text('Set for this Owlbear scene')");
   await sleep(400);
   ok("console: an Owlbear scene can be given a radio scene", (await bar.evaluate((k) => window.__stub.st.sceneMeta[k], SCENE_KEY)).scene === lib.scenes[0].id);
 
@@ -877,6 +900,256 @@ const DNM = { threat: 0, momentum: 2, initiative: null, epochs: { breather: 0, b
   await page.close();
 }
 
+
+// -------------------------------------------------------------
+// 10. From the first table (1.2): what went wrong in the room, each shown fixed
+// -------------------------------------------------------------
+{
+  // Buttons that needed two presses. The panel redrew itself between the press and
+  // the release, so the click landed on a button that was no longer there.
+  const ctx = await browser.newContext({ viewport: { width: 520, height: 900 } });
+  const lib = { ...LIB, lists: [{ id: "ex", name: "Explore", tracks: [{ k: "a", u: FILE("long-m"), t: "M" }] }], fadeSeconds: 0 };
+  const bar = await ctx.newPage();
+  const barErrors = await open(bar, { role: "GM", conn: "conn-gm", players: [], library: lib, meta: room(null) });
+  const con = await ctx.newPage();
+  const errors = await open(con, { file: "index.html", role: "GM", conn: "conn-gm", players: [] });
+  await con.waitForFunction(() => document.getElementById("c-conn").textContent.includes("GM"), null, { timeout: 5000 }).catch(() => {});
+
+  await con.evaluate(() => { window.__keep = document.querySelector("#c-music button.primary"); });
+  await sleep(6500);
+  ok("clicks: a report that says nothing new redraws nothing", await con.evaluate(() => window.__keep.isConnected));
+
+  // Typing a link, then pressing Add while the bar reports a change.
+  await con.fill("#c-amb input[type=text]", "https://files.test/long-brook.mp3");
+  await patchMeta(bar, { [STATE_KEY]: { v: 2, music: null, amb: [], scene: "Somewhere" } });
+  await sleep(400);
+  const addBox = await con.locator("#c-amb button:has-text('Add')").boundingBox();
+  await con.mouse.move(addBox.x + addBox.width / 2, addBox.y + addBox.height / 2);
+  await con.mouse.down();
+  await patchMeta(bar, { [STATE_KEY]: { v: 2, music: null, amb: [], scene: "Elsewhere" } });
+  await sleep(300);
+  await con.mouse.up();
+  await sleep(600);
+  let s = await roomState(bar);
+  ok("clicks: Add works on the first press, even mid-redraw", s.amb.length === 1 && s.amb[0].track.u === "https://files.test/long-brook.mp3");
+
+  // Every layer has its own pause.
+  await con.click("#c-amb button[aria-label^='Pause']");
+  await sleep(500);
+  s = await roomState(bar);
+  ok("layers: one can be paused for everyone", s.amb[0].off === true);
+  ok("layers: and shows as paused", /paused/.test(await con.textContent("#c-amb .layer")));
+  await con.click("#c-amb button[aria-label^='Play']");
+  await sleep(500);
+  ok("layers: and played again", !("off" in (await roomState(bar)).amb[0]));
+
+  // Reactions saved as they are chosen, two in a row, neither lost.
+  await con.click('button[data-tab="reactions"]');
+  await sleep(300);
+  await con.selectOption("#c-react select[aria-label='Threat goes up: sound']", { label: "D&M: Crit" });
+  await con.selectOption("#c-react select[aria-label='Momentum gained: sound']", { label: "Coast: Gull" });
+  await sleep(600);
+  const r = (await bar.evaluate((k) => JSON.parse(localStorage.getItem(k)), LIBRARY_KEY)).reactions;
+  ok("reactions: two changes in a row are both kept", r.threatUp.sound === "s-crit" && r.momentumUp && r.momentumUp.sound === "s-gull");
+  ok("reactions: and the ones not touched are too", r.rollCrit.sound === "s-crit" && r.combatStart.scene === "fight");
+
+  // A scene pressed again stops.
+  await con.click('button[data-tab="play"]');
+  await sleep(300);
+  await con.click("#c-amb button:has-text('Stop all ambience')");
+  await sleep(300);
+  await con.click("#c-scenes button.scene:has-text('Coast')");
+  await sleep(500);
+  s = await roomState(bar);
+  ok("scenes: pressing one plays it", s.scene === "Coast" && s.amb.length === 1);
+  ok("scenes: it is lit", (await con.getAttribute("#c-scenes button.scene:has-text('Coast')", "aria-pressed")) === "true");
+  await con.click("#c-scenes button.scene:has-text('Coast')");
+  await sleep(500);
+  s = await roomState(bar);
+  ok("scenes: pressing it again stops it", s.scene === "" && s.amb.length === 0);
+  ok("clicks: nothing threw", errors.length === 0 && barErrors.length === 0);
+  if (errors.length || barErrors.length) console.log("     ", errors[0] || barErrors[0]);
+  await ctx.close();
+}
+
+{
+  // A panel whose BroadcastChannel does not work still reaches its bar, through
+  // Owlbear's own messages — the whole library included, in pieces.
+  const ctx = await browser.newContext();
+  const long = (i) => `https://files.test/a-rather-long-file-name-for-sound-number-${i}-from-a-big-library.mp3`;
+  const big = { ...LIB,
+    lists: [...LIB.lists, { id: "lots", name: "Lots", tracks: Array.from({ length: 150 }, (_, i) => ({ k: "a", u: long(i), t: "Track " + i, s: long(i) })) }],
+    sounds: Array.from({ length: 120 }, (_, i) => ({ id: "n" + i, name: "Sound number " + i, page: "Page " + (i % 7), track: { k: "a", u: long(i), t: "x", s: long(i) } })) };
+  const bar = await ctx.newPage();
+  const barErrors = await open(bar, { role: "GM", conn: "conn-gm", players: [], library: big, meta: room(null), noBC: true });
+  const con = await ctx.newPage();
+  const errors = await open(con, { file: "index.html", role: "GM", conn: "conn-gm", players: [], noBC: true });
+  await con.waitForFunction(() => document.getElementById("c-conn").textContent.includes("GM"), null, { timeout: 6000 }).catch(() => {});
+  ok("link: without BroadcastChannel, Owlbear's route connects", (await con.textContent("#c-conn")) === "Connected · GM");
+  const pieces = (await sent(bar)).filter((m) => m.data && m.data.t === "piece");
+  ok(`link: a large library travels in pieces (${pieces.length})`, pieces.length >= 2);
+  await con.click('button[data-tab="library"]');
+  await sleep(300);
+  ok("link: and arrives whole", /Sounds \(120\)/.test(await con.textContent("#c-sounds")));
+  await con.click('button[data-tab="play"]');
+  await con.click("#c-music button:has-text('Play this list')");
+  await sleep(600);
+  ok("link: commands go the same way", !!(await roomState(bar)) && (await roomState(bar)).music.list === "ex");
+  ok("link: nothing threw", errors.length === 0 && barErrors.length === 0);
+  if (errors.length || barErrors.length) console.log("     ", errors[0] || barErrors[0]);
+  await ctx.close();
+
+  // No bar at all: the panel opens one by itself, once, and says so.
+  const ctx2 = await browser.newContext();
+  const lone = await ctx2.newPage();
+  await open(lone, { file: "index.html", role: "GM", conn: "conn-gm", players: [] });
+  await sleep(2000);
+  const opened = (await lone.evaluate(() => window.__stub.st.popover)).filter((p) => p[0] === "open");
+  ok("link: with no bar, the panel opens it", opened.length === 1 && /bar\.html$/.test(opened[0][1].url));
+  ok("link: and says what it is doing", /Opening the radio bar/.test(await lone.textContent("#c-nobar-text")));
+  ok("link: the Open button is there anyway", await lone.isVisible("#c-open-bar"));
+  await ctx2.close();
+}
+
+{
+  // A hand on a video. The GM pausing it pauses the room; a player pausing it is
+  // left paused, not restarted every four seconds.
+  const page = await browser.newPage();
+  const errors = await open(page, { role: "GM", conn: "conn-gm", players: [], library: LIB,
+    meta: room({ seq: 1, track: { k: "yt", v: "_YsP_UGd8Ns", t: "Fight!" }, at: Date.now(), paused: null, list: "cb", i: 0, vol: 1 }) });
+  await tune(page);
+  await page.waitForFunction(() => window.__yt && window.__yt.state === 1, null, { timeout: 4000 }).catch(() => {});
+  await sleep(1200);
+  await page.evaluate(() => window.__yt.hand(2));
+  await sleep(400);
+  let s = await roomState(page);
+  ok("hand: the GM pausing the video pauses the room", s.music.paused !== null);
+  await sleep(1700);
+  await page.evaluate(() => window.__yt.hand(1));
+  await sleep(400);
+  s = await roomState(page);
+  ok("hand: and playing it plays the room", s.music.paused === null);
+  ok("hand: nothing threw", errors.length === 0);
+  await page.close();
+
+  const pl = await browser.newPage();
+  const perr = await open(pl, { role: "PLAYER", conn: "conn-p",
+    meta: room({ seq: 1, track: { k: "yt", v: "_YsP_UGd8Ns", t: "Fight!" }, at: Date.now(), paused: null, list: "cb", i: 0, vol: 1 }) });
+  await tune(pl);
+  await pl.waitForFunction(() => window.__yt && window.__yt.state === 1, null, { timeout: 4000 }).catch(() => {});
+  await sleep(1200);
+  await pl.evaluate(() => { window.__yt.hand(2); window.__yt.calls.length = 0; });
+  await sleep(4800);
+  ok("hand: a player's pause is left alone", !(await pl.evaluate(() => window.__yt.calls.some((c) => c[0] === "playVideo"))) && (await pl.evaluate(() => window.__yt.state)) === 2);
+  ok("hand: and never reaches the room", (await roomState(pl)).music.paused === null);
+  ok("hand: nothing threw for the player", perr.length === 0);
+  await pl.close();
+}
+
+{
+  // A YouTube playlist with a video that will not play skips that video, not the
+  // list — and the next video reuses the player, so a click given once still counts.
+  const lib = { ...LIB, lists: [...LIB.lists, { id: "fs", name: "Free songs", tracks: [{ k: "ytl", l: "PLRy5AGzKZLmE", t: "Free Song Sunday" }] },
+    { id: "two", name: "Two videos", tracks: [{ k: "yt", v: "aaaaaaaaaaa", t: "A" }, { k: "yt", v: "ccccccccccc", t: "C" }] }], fadeSeconds: 0 };
+  const page = await browser.newPage();
+  const errors = await open(page, { role: "GM", conn: "conn-gm", players: [], library: lib,
+    meta: room({ seq: 1, track: { k: "ytl", l: "PLRy5AGzKZLmE", t: "Free Song Sunday" }, at: Date.now(), paused: null, list: "fs", i: 0, vol: 1 }) });
+  await tune(page);
+  await page.waitForFunction(() => window.__yt && window.__yt.state === 1, null, { timeout: 4000 }).catch(() => {});
+  await sleep(300);
+  await page.evaluate(() => window.__yt.opts.events.onError({ data: 150 }));
+  await sleep(500);
+  let s = await roomState(page);
+  ok("youtube: a video that will not play is skipped inside its playlist", (await page.evaluate(() => window.__yt.calls.some((c) => c[0] === "nextVideo"))) && s.music.list === "fs" && s.music.sub === 1);
+
+  await page.evaluate(({ k }) => window.__stub.patchMeta({ [k]: { v: 2, music: { seq: 5, track: { k: "yt", v: "aaaaaaaaaaa", t: "A" }, at: Date.now(), paused: null, list: "two", i: 0, vol: 1 }, amb: [], scene: "" } }), { k: STATE_KEY });
+  await sleep(800);
+  await page.evaluate(({ k }) => window.__stub.patchMeta({ [k]: { v: 2, music: { seq: 6, track: { k: "yt", v: "ccccccccccc", t: "C" }, at: Date.now(), paused: null, list: "two", i: 1, vol: 1 }, amb: [], scene: "" } }), { k: STATE_KEY });
+  await sleep(800);
+  const yts = await page.evaluate(() => window.__yts.length);
+  ok(`youtube: the next video reuses a player (${yts} made for three videos)`, yts <= 2);
+  ok("youtube: and plays the new video", await page.evaluate(() => window.__yts.some((y) => y.vid === "ccccccccccc" && y.state === 1)));
+  ok("youtube: one tile shows", (await page.$$eval(".embed-tile", (n) => n.filter((x) => x.style.display !== "none").length)) === 1);
+  ok("youtube: nothing threw", errors.length === 0);
+  if (errors.length) console.log("     ", errors[0]);
+  await page.close();
+}
+
+{
+  // A SoundCloud playlist, the one Gus pasted.
+  const set = { k: "scl", u: "https://soundcloud.com/matthew-hawkins-54089931/sets/fantasy-ambience", t: "fantasy ambience" };
+  const lib = { ...LIB, lists: [{ id: "set", name: "Fantasy", tracks: [set, { k: "a", u: FILE("long-after"), t: "After" }] }] };
+  const page = await browser.newPage();
+  const errors = await open(page, { role: "GM", conn: "conn-gm", players: [], library: lib,
+    meta: room({ seq: 1, track: set, at: Date.now(), paused: null, list: "set", i: 0, vol: 1 }) });
+  await tune(page);
+  await page.waitForFunction(() => window.__sc && window.__sc.calls.some((c) => c[0] === "play"), null, { timeout: 4000 }).catch(() => {});
+  ok("soundcloud set: the widget is pointed at the set", /sets%2Ffantasy-ambience/.test(await page.getAttribute(".embed-tile iframe", "src").catch(() => "")));
+  await sleep(300);
+  let s = await roomState(page);
+  ok("soundcloud set: the track's title is shared", s.music.nt === "One");
+  await page.evaluate(() => window.__sc.fire("finish"));
+  await sleep(400);
+  ok("soundcloud set: one track ending is not the end of the set", (await roomState(page)).music.seq === 1);
+  await page.evaluate(() => { window.__sc.idx = 1; window.__sc.fire("play"); });
+  await sleep(400);
+  s = await roomState(page);
+  ok("soundcloud set: moving on is told to the room", s.music.sub === 1 && s.music.nt === "Two");
+  await page.evaluate(() => { window.__sc.idx = 2; window.__sc.fire("play"); });
+  await sleep(300);
+  await page.evaluate(() => window.__sc.fire("finish"));
+  await sleep(500);
+  s = await roomState(page);
+  ok("soundcloud set: its last track ending moves the playlist on", s.music.seq === 2 && s.music.track.t === "After");
+  ok("soundcloud set: nothing threw", errors.length === 0);
+  if (errors.length) console.log("     ", errors[0]);
+  await page.close();
+
+  // A player joining the set on its third track.
+  const pl = await browser.newPage();
+  const perr = await open(pl, { role: "PLAYER", conn: "conn-p", meta: room({ seq: 1, track: set, sub: 2, at: Date.now() - 5000, paused: null, list: "set", i: 0, vol: 1 }) });
+  await tune(pl);
+  await pl.waitForFunction(() => window.__sc && window.__sc.calls.some((c) => c[0] === "skip"), null, { timeout: 4000 }).catch(() => {});
+  ok("soundcloud set: a player joins on the room's track", await pl.evaluate(() => window.__sc.calls.some((c) => c[0] === "skip" && c[1] === 2)));
+  ok("soundcloud set: nothing threw for the player", perr.length === 0);
+  await pl.close();
+}
+
+{
+  // Moving the bar reopens it. It tries to carry on without a second Tune in; a
+  // browser that allows that plays on, and one that does not asks again, plainly.
+  const run = async (b, allowed) => {
+    const ctx = await b.newContext();
+    const page = await ctx.newPage();
+    const errors = await open(page, { meta: room({ seq: 1, track: { k: "a", u: FILE("long-m"), t: "M" }, at: Date.now(), paused: null, vol: 1 }) });
+    await tune(page);
+    await sleep(300);
+    await page.click("#move");
+    await sleep(300);
+    const reopened = (await page.evaluate(() => window.__stub.st.popover)).some((p) => p[0] === "open");
+    const again = await ctx.newPage();
+    const errs2 = await open(again, { meta: room({ seq: 1, track: { k: "a", u: FILE("long-m"), t: "M" }, at: Date.now(), paused: null, vol: 1 }) });
+    await sleep(1500);
+    const playing = (await media(again, 'audio[data-role="music"]')).some((a) => !a.paused);
+    const asks = await again.isVisible("#tune");
+    const once = (await again.evaluate((k) => localStorage.getItem(k), RETUNE_KEY)) === null;
+    const later = await ctx.newPage();
+    await open(later, { meta: room(null) });
+    const laterAsks = await later.isVisible("#tune");
+    await ctx.close();
+    return { reopened, playing, asks, once, laterAsks, errors: [...errors, ...errs2] };
+  };
+  const free = await chromium.launch({ ...(findChromium() ? { executablePath: findChromium() } : {}), args: ["--autoplay-policy=no-user-gesture-required"] });
+  const a = await run(free, true);
+  await free.close();
+  ok("move: the bar reopens in the next corner", a.reopened);
+  ok("move: where the browser allows it, the reopened bar plays on by itself", a.playing && !a.asks);
+  ok("move: once only", a.once);
+  ok("move: a bar opened any other way still asks", a.laterAsks);
+  const b = await run(browser, false);
+  ok("move: where the browser refuses, it asks for Tune in again rather than sitting silent", !b.playing && b.asks);
+  ok("move: nothing threw", a.errors.length === 0 && b.errors.length === 0);
+}
 
 await browser.close();
 await site.close();
