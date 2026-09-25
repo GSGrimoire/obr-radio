@@ -15,6 +15,10 @@ import {
 import { diffDnm, planReaction, rollCues, sortCues } from "../reactions.js";
 import { readCommand, command, NS, GM_ONLY } from "../link.js";
 import { readPrefs, barPopover, barSize, STATE_KEY } from "../radio.js";
+import { PACKS, PACK_BASE, addPack, packInstalled, credits } from "../packs.js";
+import { readdirSync, existsSync } from "fs";
+import { fileURLToPath } from "url";
+import path from "path";
 
 let passed = 0;
 let failed = 0;
@@ -415,6 +419,55 @@ const YT = (v) => ({ k: "yt", v, t: "video " + v });
   ok("the bar stays open on a map click", bar.disableClickAway === true);
   ok("two video players fit side by side", bar.width === 400 && bar.height === barSize(0).height + 200);
   ok("bottom-right is held by its bottom-right corner", bar.transformOrigin.horizontal === "RIGHT" && bar.anchorPosition.left === 1584);
+}
+
+// -------------------------------------------------------------
+// The starter packs
+// -------------------------------------------------------------
+{
+  const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const files = PACKS.flatMap((p) => (p.sounds || []).filter((s) => s.file).map((s) => s.file));
+  ok("every pack file is in the repository", files.every((f) => existsSync(path.join(repo, "sounds", f))));
+  const onDisk = ["sfx", "amb"].flatMap((d) => readdirSync(path.join(repo, "sounds", d)).map((f) => `${d}/${f}`));
+  ok(`no file in sounds/ is unused (${onDisk.length} files)`, onDisk.every((f) => files.includes(f)));
+  const rows = credits();
+  ok("every hosted file is credited", rows.filter((r) => r.file).every((r) => r.credit && r.credit.author && r.credit.url && r.credit.license));
+  ok("nothing hosted is NonCommercial or NoDerivatives",
+    rows.filter((r) => r.file).every((r) => ["CC0", "CC BY", "Public domain"].includes(r.credit.license)));
+  ok("every CC BY file says what was changed", rows.filter((r) => r.credit && r.credit.license === "CC BY").every((r) => r.credit.changes));
+
+  let lib = emptyLibrary();
+  for (const p of PACKS) {
+    const r = addPack(lib, p.id, { base: PACK_BASE });
+    ok(`pack "${p.name}" adds cleanly`, !r.error && r.lib);
+    lib = r.lib;
+  }
+  const total = new Set(PACKS.flatMap((p) => (p.sounds || []).map((s) => s.file || s.link))).size;
+  ok(`all packs together: ${lib.sounds.length} sounds, none twice`, lib.sounds.length === total);
+  ok("every pack sound survives the library's own checks", lib.sounds.every((s) => s.track && s.track.t === s.name));
+  ok("the video beds are YouTube, the files are audio from this site",
+    lib.sounds.filter((s) => s.page === "Video beds").every((s) => s.track.k === "yt")
+      && lib.sounds.filter((s) => s.page !== "Video beds").every((s) => s.track.k === "a" && s.track.u.startsWith(PACK_BASE)));
+  ok("scenes arrive with their layers", lib.scenes.length === 10 && lib.scenes.every((s) => s.amb.length >= 1));
+  ok("the tavern scene plays the tavern playlist", lib.scenes.find((s) => s.name === "Tavern").music.list === lib.lists.find((l) => l.name === "Tavern music").id);
+  ok("the dungeon scene stops the music", lib.scenes.find((s) => s.name === "Dungeon").music.mode === "stop");
+  ok("every scene fits the room: at most one video, at most four layers",
+    lib.scenes.every((s) => s.amb.length <= 4 && s.amb.filter((l) => l.track.k === "yt").length <= 1));
+  ok("reactions are filled in", lib.reactions.rollCrit && lib.sounds.find((s) => s.id === lib.reactions.rollCrit.sound).name === "Critical");
+  ok("the GS Grimoire playlist comes with the music pack", lib.lists.some((l) => l.name === "GS Grimoire free songs" && l.tracks.length === 2));
+  ok("every pack reads as installed", PACKS.every((p) => packInstalled(lib, p.id)));
+
+  const again = PACKS.reduce((l, p) => addPack(l, p.id).lib, lib);
+  ok("adding the packs again changes nothing", JSON.stringify(again) === JSON.stringify(lib));
+
+  const mine = readLibrary({ v: 2, sounds: [{ id: "mine", name: "My sting", track: { k: "a", u: "https://x.test/me.mp3" } }],
+    reactions: { rollCrit: { sound: "mine" } }, scenes: [{ id: "t", name: "Tavern", music: { mode: "keep" }, amb: [] }] });
+  const merged = addPack(addPack(mine, "places").lib, "checks").lib;
+  ok("a reaction the GM chose is never overwritten", merged.reactions.rollCrit.sound === "mine");
+  ok("but empty ones are filled", merged.reactions.rollSuccess && merged.reactions.rollSuccess.sound);
+  ok("a scene the GM already has is left alone", merged.scenes.filter((s) => s.name === "Tavern").length === 1 && merged.scenes.find((s) => s.name === "Tavern").id === "t");
+  ok("the GM's own sounds are kept", merged.sounds.some((s) => s.id === "mine"));
+  ok("an unknown pack is refused", !!addPack(emptyLibrary(), "nope").error);
 }
 
 console.log(`radio: ${passed} passed, ${failed} failed`);

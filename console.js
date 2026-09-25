@@ -21,6 +21,7 @@ import {
 import { CUES } from "./reactions.js";
 import { displayTitle, MAX_EMBEDS } from "./state.js";
 import { barPopover, readPrefs, PREFS_KEY, RADIO_VERSION } from "./radio.js";
+import { PACKS, addPack, packInstalled, packCounts } from "./packs.js";
 
 const POPOUT = new URLSearchParams(location.search).has("popout");
 const $ = (id) => document.getElementById(id);
@@ -216,7 +217,7 @@ function renderMusic() {
           title: "The music's level for everyone", onchange: (ev) => call("music.vol", { v: Number(ev.target.value) / 100 }) })) : null),
     lib.lists.length
       ? h("div", { class: "row" }, pick, h("button", { onclick: () => pickedList && call("music.play", { list: pickedList }) }, "Play this list"))
-      : h("p", { class: "muted", text: "No playlists yet. Make one in Library." }),
+      : h("p", { class: "muted", text: "No playlists yet. Make one in Library, or add the GS Grimoire music starter pack there." }),
   ];
 }
 
@@ -306,7 +307,7 @@ function renderScenes() {
   };
   return [
     h("h2", { text: "Scenes" }),
-    buttons.length ? h("div", { class: "scenes" }, buttons) : h("p", { class: "muted", text: "A scene is a moment's sound: a playlist and its ambience, recalled in one press. Set up what should play, then save it here." }),
+    buttons.length ? h("div", { class: "scenes" }, buttons) : h("p", { class: "muted", text: "A scene is a moment's sound: a playlist and its ambience, recalled in one press. Set up what should play, then save it here — or add the Places & weather starter pack for ten ready-made ones." }),
     h("div", { class: "row" },
       h("input", { type: "text", maxlength: 40, placeholder: "Name what is playing now…", value: sceneDraft.name,
         oninput: (ev) => { sceneDraft.name = ev.target.value; }, onkeydown: (ev) => { if (ev.key === "Enter") save(); } }),
@@ -360,7 +361,45 @@ function renderBoard() {
       onclick: () => { boardPage = p; section("c-board", renderBoard); },
     }, p))) : null,
     pads.length ? h("div", { class: "pads" }, pads)
-      : h("p", { class: "muted", text: "No sounds yet. Add some in Library → Sounds: one line each, \"Name | link\"." }),
+      : h("p", { class: "muted", text: "No sounds yet. Add a starter pack in Library, or your own in Library → Sounds: one line each, \"Name | link\"." }),
+  ];
+}
+
+// -------------------------------------------------------------
+// Library: starter packs
+// -------------------------------------------------------------
+function plural(n, one, many) { return `${n} ${n === 1 ? one : many}`; }
+
+function renderPacks() {
+  const { lib } = model;
+  const cards = PACKS.map((p) => {
+    const c = packCounts(p.id);
+    const have = packInstalled(lib, p.id);
+    const bits = [c.sounds && plural(c.sounds, "sound", "sounds"), c.lists && plural(c.lists, "playlist", "playlists"),
+      c.scenes && plural(c.scenes, "scene", "scenes"), c.reactions && plural(c.reactions, "reaction", "reactions")].filter(Boolean);
+    const add = async () => {
+      const r = addPack(lib, p.id);
+      if (r.error) { toast(r.error, true); return; }
+      const res = await call("lib.put", { lib: r.lib });
+      if (res.error) return;
+      const a = r.added;
+      const got = [a.sounds && plural(a.sounds, "sound", "sounds"), a.lists && plural(a.lists, "playlist", "playlists"),
+        a.scenes && plural(a.scenes, "scene", "scenes"), a.reactions && plural(a.reactions, "reaction", "reactions")].filter(Boolean);
+      toast(got.length ? `Added ${got.join(", ")}.` : "You already had all of it.");
+    };
+    return h("div", { class: "pack" },
+      h("div", { class: "pack-text" },
+        h("strong", { text: p.name }),
+        h("div", { class: "muted small", text: p.blurb }),
+        h("div", { class: "muted small", text: bits.join(" · ") })),
+      h("button", { class: have ? "" : "primary", disabled: have, onclick: add }, have ? "Added" : "Add"));
+  });
+  return [
+    h("h2", { text: "Starter packs" }),
+    h("p", { class: "muted small", text: "Ready-made sounds, ambience, scenes and playlists to start from. Adding a pack never replaces anything you already have." }),
+    cards,
+    h("p", { class: "muted small" }, "Free sounds from Kenney, OpenGameArt, Freesound and SoundBible, with thanks. ",
+      h("a", { href: "credits.html", target: "_blank", rel: "noopener", text: "Credits" })),
   ];
 }
 
@@ -609,6 +648,7 @@ function render() {
     section("c-scenes", renderScenes);
     section("c-board", renderBoard);
   } else if (tab === "library") {
+    section("c-packs", renderPacks);
     section("c-lists", renderLists);
     section("c-sounds", renderSounds);
     section("c-scene-list", renderSceneList);

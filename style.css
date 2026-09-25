@@ -114,3 +114,7 @@ table.react thead th { color: var(--muted); font-size: 11px; text-transform: upp
   table.react thead { display: none; }
   table.react tr { border-top: 1px solid var(--line); padding: 4px 0; }
 }
+
+.pack { display: flex; gap: 10px; align-items: center; justify-content: space-between; border-top: 1px solid var(--line); padding: 8px 0; }
+.pack-text { min-width: 0; }
+.pack button { flex: 0 0 auto; }

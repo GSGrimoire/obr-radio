@@ -10,7 +10,7 @@ a scene for initiative (and the music it interrupted, back afterwards), a sting 
 Threat rises, a sound for a critical or a complication. Without D&M it is a complete
 radio on its own.
 
-Version **1.0**. Not yet tried in a real room; see *Live checks* below.
+Version **1.1**. Not yet tried in a real room; see *Live checks* below.
 
 **Install:** in Owlbear, add `https://gsgrimoire.github.io/obr-radio/manifest.json`.
 
@@ -40,6 +40,34 @@ soundboard and reacts to the table. The **Radio panel** is its console:
 **⧉ on the bar** opens the same console in its own window, for a second screen. It
 is a remote control for the bar inside Owlbear: close it any time and the sound
 carries on.
+
+### Starter packs
+
+Library → **Starter packs** adds ready-made material in one press. Adding a pack
+never replaces anything you already have: a sound whose link you already have is
+not added twice, a playlist or scene with the same name is left alone, and a
+reaction is filled in only where you have not chosen a sound.
+
+| Pack | What it adds |
+|---|---|
+| Battle & adventure | 33 soundboard sounds on three pages: Combat, Creatures, World |
+| Places & weather | 13 ambience loops (nature, weather, places), 9 hour-long YouTube ambiences (taverns, dungeons, caves, battles, machine ruins), a tavern-music playlist, and 10 scenes built from them |
+| Dice & Dreams and Machines | 8 short cues for success, failure, critical, complication, Threat, Momentum, initiative and rests — and the matching reactions |
+| GS Grimoire music | the GS Grimoire free songs playlist, and Liquid Banjo |
+
+The files are hosted with the radio (`sounds/`), so every player streams them from
+one place. **Every hosted file is CC0, CC BY or public domain — nothing
+NonCommercial and nothing NoDerivatives** — so the packs would stay usable even if
+the radio became a product. CC BY authors are credited on
+[the credits page](https://gsgrimoire.github.io/obr-radio/credits.html), which is
+built from the same data as the packs (`packs.js`), so it cannot drift from them.
+
+Where they came from: sound effects from Kenney's packs and CC0 packs on
+OpenGameArt (via the CC0-only index `Mcamento8/open-game-sfx-index`); ambience from
+Freesound and SoundBible recordings made to loop by the Blanket and AmbientSounds
+projects, whose per-sound licences these follow. A sound collection that did not
+record each sound's licence was left out rather than guessed at. The YouTube
+ambiences are not hosted: they play through YouTube's own player.
 
 ### What can go in a playlist
 
@@ -80,6 +108,7 @@ are one-shot broadcasts from the GM's bar: nothing to sync, nothing to catch up 
 | `players.js` | one interface over `<audio>`, YouTube's player and SoundCloud's widget |
 | `bar.js` / `bar.html` | the docked bar: plays for everyone; the GM's also conducts |
 | `console.js` / `index.html` | the console, inside Owlbear or in its own window |
+| `packs.js` / `sounds/` / `credits.html` | the starter packs, their files, and their credits |
 | `suno-collect.js` / `suno.html` | the Copy for Radio bookmark, and the page you install it from |
 | `sdk.js` | the Owlbear SDK, vendored (the same bundle as `dnm-obr`) |
 
@@ -131,8 +160,8 @@ are one-shot broadcasts from the GM's bar: nothing to sync, nothing to catch up 
 
 ```sh
 npm install playwright --no-save
-node tests/radio.test.mjs     # every rule, no browser (157 checks)
-node tests/ui.test.mjs        # the bar, console, pop-out and bookmark in Chromium (104 checks)
+node tests/radio.test.mjs     # every rule and every pack, no browser (182 checks)
+node tests/ui.test.mjs        # the bar, console, pop-out, packs and bookmark in Chromium (114 checks)
 ```
 
 `ui.test.mjs` swaps the SDK for a stub in a staged copy under `out/`, and answers
@@ -160,9 +189,15 @@ bar, and follows a real pop-up for the popped-out window.
 8. With D&M in the room: initiative, Threat, a Breather, and an open roll's critical
    each do what the Reactions tab says; a hidden roll does nothing.
 9. The Copy for Radio bookmark on a real Suno playlist page finds every song.
+10. The starter packs' YouTube ambiences embed (a channel can switch embedding
+    off; the radio skips a video that will not play and says so), and the hosted
+    loops and effects play from `gsgrimoire.github.io`.
 
 ## Releases
 
+- **1.1**: starter packs — 33 effects, 13 ambience loops, 9 YouTube ambiences, 10
+  scenes, a tavern playlist, cues and reactions for D&M dice, and the GS Grimoire
+  music — with a credits page. All hosted files CC0, CC BY or public domain.
 - **1.0**: ambience layers under the music (looped or "now and then"); a soundboard
   with pages; scenes that recall music and ambience together, and follow Owlbear
   scene switches; reactions to D&M rolls, pools, initiative and rests; SoundCloud

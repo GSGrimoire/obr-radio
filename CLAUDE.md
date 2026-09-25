@@ -22,3 +22,8 @@ and the live-checks list is what the suites cannot see. ROADMAP.md is the plan.
   edit, a letter for fixing the last release. Update `RADIO_VERSION` in radio.js,
   `manifest.json` and the Releases list in README together.
 - Browser tests are served over http, never file://.
+- Starter packs (`packs.js`, `sounds/`): only CC0, CC BY or public domain files, each
+  credited in `packs.js` with author, source link and licence (and what was changed,
+  for CC BY). Never NonCommercial, never NoDerivatives, never a source that does not
+  record each file's licence. `radio.test.mjs` enforces all of that and fails on an
+  unused file in `sounds/`.

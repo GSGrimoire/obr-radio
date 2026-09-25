@@ -9,7 +9,7 @@
 //   link.js       how the console talks to the radio bar
 // =============================================================
 
-export const RADIO_VERSION = "1.0";
+export const RADIO_VERSION = "1.1";
 
 // The namespace. A key, never a URL — nothing is fetched from it. Changing it
 // orphans every room's radio state and every GM's library, so it needs a migration,

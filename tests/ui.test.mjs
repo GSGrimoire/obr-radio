@@ -226,6 +226,13 @@ async function routes(page) {
     route.fulfill({ status: 206, contentType: "audio/wav", body: body.subarray(start, end + 1),
       headers: { "Accept-Ranges": "bytes", "Content-Range": `bytes ${start}-${end}/${body.length}` } });
   };
+  // The starter packs' real files, served from this checkout as GitHub Pages would.
+  await page.route("https://gsgrimoire.github.io/obr-radio/sounds/**", (route) => {
+    const rel = new URL(route.request().url()).pathname.replace("/obr-radio/", "");
+    const file = path.join(repo, rel);
+    if (!file.startsWith(path.join(repo, "sounds")) || !fs.existsSync(file)) { route.fulfill({ status: 404 }); return; }
+    route.fulfill({ status: 200, contentType: "audio/ogg", body: fs.readFileSync(file), headers: { "Accept-Ranges": "bytes" } });
+  });
   await page.route("https://cdn1.suno.ai/**", media);
   await page.route("https://files.test/**", media);
   await page.route("https://www.youtube.com/iframe_api", (r) => r.fulfill({ status: 200, contentType: "text/javascript", body: YT_STUB }));
@@ -714,6 +721,77 @@ const DNM = { threat: 0, momentum: 2, initiative: null, epochs: { breather: 0, b
   ok("no bar: Open the radio docks the bar", !!opened && opened[1].url.endsWith("/bar.html") && opened[1].disableClickAway === true);
   ok("no bar: nothing throws", errors.length === 0);
   await page.close();
+}
+
+// -------------------------------------------------------------
+// 10. The starter packs, with their real files
+// -------------------------------------------------------------
+{
+  const ctx = await browser.newContext({ viewport: { width: 520, height: 900 } });
+  const bar = await ctx.newPage();
+  const barErrors = await open(bar, { role: "GM", conn: "conn-gm", players: [], library: { v: 2, lists: [], sounds: [], scenes: [] }, meta: room(null) });
+  const con = await ctx.newPage();
+  const errors = await open(con, { file: "index.html", role: "GM", conn: "conn-gm", players: [] });
+  await con.waitForFunction(() => document.getElementById("c-conn").textContent.includes("GM"), null, { timeout: 5000 }).catch(() => {});
+  await con.click('button[data-tab="library"]');
+  await sleep(300);
+  const packNames = await con.$$eval("#c-packs .pack strong", (n) => n.map((x) => x.textContent));
+  ok(`packs: four starter packs are offered (${packNames.join(", ")})`, packNames.length === 4);
+  for (const name of packNames) {
+    await con.click(`#c-packs .pack:has(strong:text-is("${name}")) button`);
+    await sleep(500);
+  }
+  const lib = await bar.evaluate((k) => JSON.parse(localStorage.getItem(k)), LIBRARY_KEY);
+  ok(`packs: added through the console, kept by the bar (${lib.sounds.length} sounds, ${lib.scenes.length} scenes, ${lib.lists.length} playlists)`,
+    lib.sounds.length > 60 && lib.scenes.length === 10 && lib.lists.length === 2);
+  ok("packs: every button now says Added", (await con.$$eval("#c-packs .pack button", (n) => n.map((b) => b.textContent))).every((t) => t === "Added"));
+  ok("packs: reactions were filled in", !!lib.reactions.rollSuccess && !!lib.reactions.combatStart);
+
+  await con.click('button[data-tab="play"]');
+  await sleep(300);
+  await tune(bar);
+  await con.click("#c-board .pad:has-text('Draw sword')");
+  await bar.waitForFunction(() => { const a = document.querySelector('audio[data-role="shot"]'); return a && !a.paused && a.duration > 0; }, null, { timeout: 4000 }).catch(() => {});
+  const shot = await bar.evaluate(() => { const a = document.querySelector('audio[data-role="shot"]'); return a ? { src: a.src, dur: a.duration, paused: a.paused } : null; });
+  ok("packs: a pad plays the real file, from where GitHub Pages will serve it",
+    !!shot && shot.src === "https://gsgrimoire.github.io/obr-radio/sounds/sfx/sword-draw.ogg" && shot.dur > 0.2 && !shot.paused);
+
+  await con.click("#c-scenes button.scene:has-text('Storm at sea')");
+  await sleep(2500);
+  const layers = await media(bar, 'audio[data-role="layer"]');
+  ok(`packs: a scene plays its real loops together (${layers.filter((l) => !l.paused).length} playing)`, layers.length === 3 && layers.every((l) => !l.paused && l.src.includes("/sounds/amb/")));
+
+  // Every file we ship decodes in Chromium.
+  const files = [...new Set(lib.sounds.filter((x) => x.track.k === "a").map((x) => x.track.u))];
+  const bad = await bar.evaluate(async (urls) => {
+    const out = [];
+    for (const u of urls) {
+      const ok = await new Promise((res) => {
+        const a = new Audio();
+        a.preload = "metadata";
+        a.onloadedmetadata = () => res(a.duration > 0);
+        a.onerror = () => res(false);
+        a.src = u;
+        setTimeout(() => res(false), 5000);
+      });
+      if (!ok) out.push(u);
+    }
+    return out;
+  }, files);
+  ok(`packs: all ${files.length} shipped files decode in the browser`, bad.length === 0);
+  if (bad.length) console.log("      ", bad.slice(0, 5).join(" "));
+  ok("packs: nothing threw", errors.length === 0 && barErrors.length === 0);
+  if (errors.length || barErrors.length) console.log("     ", errors[0] || barErrors[0]);
+
+  const cred = await ctx.newPage();
+  const credErrors = [];
+  cred.on("pageerror", (e) => credErrors.push(e.message));
+  await cred.goto(site.origin + "/credits.html");
+  await sleep(400);
+  const rowCount = await cred.$$eval("#rows tr", (n) => n.length);
+  ok(`credits: the page lists every sound (${rowCount} rows)`, rowCount >= 60 && credErrors.length === 0);
+  ok("credits: CC BY authors are named, with a link to the original", /Luftrum/.test(await cred.textContent("#rows")) && (await cred.$$('#rows a[href*="freesound.org/people/Luftrum"]')).length === 1);
+  await ctx.close();
 }
 
 // -------------------------------------------------------------

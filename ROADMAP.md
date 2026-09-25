@@ -22,6 +22,9 @@ The open questions were settled by default, and are easy to revisit:
 - soundboard pages are unlimited, 120 sounds in all;
 - the name stays GS Grimoire Radio.
 
+**1.1 added starter packs** (see README): effects, ambience loops, YouTube
+ambiences, scenes and D&M cues, all CC0 / CC BY / public domain with a credits page.
+
 **Next: the playtest.** Then Phase 5, in whatever order the playtest suggests.
 
 ---

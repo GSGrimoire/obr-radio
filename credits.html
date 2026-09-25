@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Radio credits</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .panel { max-width: 860px; margin: 0 auto; padding: 24px 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  td, th { text-align: left; padding: 5px 6px; border-top: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  .note { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="panel">
+  <h1>GS Grimoire Radio — credits</h1>
+  <p>The starter packs are built from free sounds made by other people. Thank you to every one of them.
+    Every file hosted with the radio is CC0, CC BY or public domain. CC BY files were changed only to make them loop, by the projects named.</p>
+  <p class="note">Hour-long ambiences and music from YouTube are not hosted here: they play through YouTube's own player, which shows the channel.</p>
+  <table>
+    <thead><tr><th>Sound</th><th>From</th><th>By</th><th>Licence</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+<script type="module">
+  import { credits } from "./packs.js";
+  const rows = document.getElementById("rows");
+  const cell = (...kids) => { const td = document.createElement("td"); td.append(...kids); return td; };
+  const link = (href, text) => { const a = document.createElement("a"); a.href = href; a.textContent = text; a.rel = "noopener"; return a; };
+  for (const r of credits()) {
+    const tr = document.createElement("tr");
+    const c = r.credit;
+    if (c) {
+      const from = [link(c.url, c.title)];
+      if (c.changes) { const n = document.createElement("div"); n.className = "note"; n.textContent = c.changes; from.push(n); }
+      tr.append(cell(r.name), cell(...from), cell(c.author), cell(link(c.licenseUrl, c.license)));
+    } else {
+      tr.append(cell(r.name), cell(link(r.link, "YouTube / Suno")), cell("see the player"), cell("played through the source's own player"));
+    }
+    rows.append(tr);
+  }
+</script>
+</body>
+</html>
