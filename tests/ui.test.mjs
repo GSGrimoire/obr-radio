@@ -154,6 +154,7 @@ const SHORT = wav(1.5);
 const CLIP = wav(3, 880);
 const U_LONG = "0f6d3c1e-2b8a-4e5f-9a7b-1c2d3e4f5a6b";
 const U_SHORT = "11111111-2222-4333-8444-555555555555";
+const U_OLD = "99999999-9999-4999-8999-999999999999";   // an old song: .mp3 only, no .mp4
 const SUNO = (u) => `https://cdn1.suno.ai/${u}.mp3`;
 const FILE = (name) => `https://files.test/${name}.mp3`;
 
@@ -212,8 +213,11 @@ const site = await serve(stage);
 async function routes(page) {
   const media = (route) => {
     const url = route.request().url();
+    // A faked 403 on a media request never completes in Playwright; a real CDN's 403
+    // ends the request and fires the element's error. A failed request does the same.
+    if (url.includes(U_OLD) && url.endsWith(".mp4")) { route.abort("failed"); return; }
     const body = url.includes(U_SHORT) || url.includes("short") ? SHORT
-      : url.includes(U_LONG) || url.includes("long") ? LONG : CLIP;
+      : url.includes(U_LONG) || url.includes(U_OLD) || url.includes("long") ? LONG : CLIP;
     // Byte ranges, as a real CDN serves them. Without them Chromium cannot seek past
     // what it has buffered, and a far seek quietly lands back at the start.
     const range = /bytes=(\d+)-(\d*)/.exec(route.request().headers().range || "");
@@ -325,6 +329,31 @@ const tune = async (page) => { await page.click("#tune"); };
   ok("player: a hostile track is never loaded", (await media(page, 'audio[data-role="music"]')).length === 0);
   ok("player: and reads as nothing playing", (await page.textContent("#title")) === "Nothing playing");
   ok("player: nothing threw along the way", errors.length === 0);
+  await page.close();
+}
+
+{
+  // Suno closed its .mp3 addresses; a song that only has one of its two files
+  // must still play, as music and as a soundboard press.
+  const page = await browser.newPage();
+  const errors = await open(page, { meta: room({ seq: 1, track: { k: "a", u: `https://cdn1.suno.ai/${U_OLD}.mp4`, t: "Old song" }, at: Date.now() - 3000, paused: null, vol: 1 }) });
+  await tune(page);
+  // Wait for data to have ARRIVED (readyState 3). "Not paused, past 2 s" is true the
+  // instant the player is made — it starts at the room's position with play asked
+  // for — so it returned before the first request had even gone out.
+  // …and for the room's position to have been reached, which after a fallback comes
+  // from the same drift correction as any track (the first seek is not always kept).
+  await page.waitForFunction(() => {
+    const a = document.querySelector('audio[data-role="music"]');
+    return a && a.src.endsWith(".mp3") && a.readyState >= 3 && !a.paused && !a.seeking && a.currentTime > 2;
+  }, null, { timeout: 8000 }).catch(() => {});
+  const a = await musicEl(page);
+  ok(`suno: a song whose .mp4 is missing plays from its .mp3 (${a.src.slice(-4)}, ${a.t.toFixed(1)}s)`, a.src.endsWith(".mp3") && !a.paused && a.t > 2);
+  await deliver(page, { type: "sound", track: { k: "a", u: `https://cdn1.suno.ai/${U_OLD}.mp4`, t: "x" }, vol: 1 });
+  await page.waitForFunction(() => { const x = document.querySelector('audio[data-role="shot"]'); return x && x.readyState >= 3 && !x.paused; }, null, { timeout: 4000 }).catch(() => {});
+  const shot = (await media(page, 'audio[data-role="shot"]'))[0];
+  ok("suno: so does a soundboard press", !!shot && shot.src.endsWith(".mp3") && !shot.paused);
+  ok("suno: nothing throws", errors.length === 0);
   await page.close();
 }
 

@@ -25,6 +25,11 @@ The open questions were settled by default, and are easy to revisit:
 **1.1 added starter packs** (see README): effects, ambience loops, YouTube
 ambiences, scenes and D&M cues, all CC0 / CC BY / public domain with a credits page.
 
+**1.1B** fixed what the first install attempt found: the manifest description was
+over Owlbear's 128 characters, Suno had closed its .mp3 addresses (Suno links now
+play the song's public share video, falling back to the .mp3 for older songs), and a
+track that failed to load wrongly un-tuned the listener.
+
 **Next: the playtest.** Then Phase 5, in whatever order the playtest suggests.
 
 ---
@@ -176,6 +181,18 @@ Confirms, the same way 0.1 did: works identically with no D&M in the room.
   item, not a capability gap.
 - Extend backup/restore to cover boards and presets alongside playlists (should
   be nearly free once their shapes exist).
+- **Spotify tracks and playlists** (asked for 2026-09-25). Spotify's Embed iFrame API
+  can load, play, pause and seek an embedded track or playlist, so it could sync the
+  way YouTube does. The catch: an embed plays the FULL track only for a listener
+  logged in to Spotify in that browser; everyone else hears a 30-second preview. The
+  Web Playback SDK is worse for this — every listener would need Premium and to sign
+  in to the radio. So: build it as an embed source, and say plainly in the console
+  which of your players will hear previews. Check the current terms first.
+- **Patreon tracks** (asked for 2026-09-25). Patreon has no embed player or streaming
+  API; audio in posts sits behind patron sign-in with addresses that expire, so a
+  radio cannot play it for a table. Worth checking again only if Patreon adds a
+  player; until then the route is to post the audio somewhere streamable too (Suno,
+  YouTube, SoundCloud) and paste that link.
 - Player-triggerable pads, opt-in, GM-controlled — genuinely nobody else offers
   this, but it's speculative fun rather than a stated need. Backlog, not planned.
 

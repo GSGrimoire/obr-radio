@@ -15,6 +15,7 @@
 // Nothing is downloaded, and nothing is played by any route but the source's own.
 // =============================================================
 import { EMBED_SIZE } from "./radio.js";
+import { sunoFallback } from "./sources.js";
 
 const scripts = new Map();
 function loadScript(src, ready) {
@@ -48,7 +49,21 @@ class AudioPlayer {
     el.dataset.role = opts.role || "";
     if (opts.layer) el.dataset.layer = opts.layer;
     el.addEventListener("ended", () => opts.onEnded && opts.onEnded());
-    el.addEventListener("error", () => { if (el.getAttribute("src")) opts.onError && opts.onError("That track would not play."); });
+    el.addEventListener("error", () => {
+      if (!el.getAttribute("src")) return;
+      // A Suno song gets its other file once before the error is reported: Suno
+      // closed the .mp3 addresses in 2026, and a library saved before then holds them.
+      const other = !this.triedFallback && sunoFallback(el.getAttribute("src"));
+      if (other) {
+        this.triedFallback = true;
+        const at = this.startAt || 0;
+        el.src = other;
+        el.currentTime = at;
+        if (this.wantPlay) el.play().catch(() => {});
+        return;
+      }
+      opts.onError && opts.onError("That track would not play.");
+    });
     el.addEventListener("playing", () => opts.onPlaying && opts.onPlaying());
     // A seek before the length is known is not always honoured, and a correction
     // that arrives mid-seek is skipped: look again the moment either settles.
@@ -56,8 +71,8 @@ class AudioPlayer {
     mediaBox().append(el);
     this.el = el;
   }
-  load(start) { this.el.src = this.track.u; this.el.currentTime = Math.max(0, start || 0); }
-  play() { return this.el.play(); }
+  load(start) { this.startAt = Math.max(0, start || 0); this.el.src = this.track.u; this.el.currentTime = this.startAt; }
+  play() { this.wantPlay = true; return this.el.play(); }
   pause() { this.el.pause(); }
   seek(t) { this.el.currentTime = t; }
   time() { return this.el.currentTime; }
@@ -242,9 +257,21 @@ export function playShot(url, volume, { onStart, onEnd, maxSeconds = 0 } = {}) {
   };
   shots.add(shot);
   el.addEventListener("ended", () => shot.dispose());
-  el.addEventListener("error", () => shot.dispose());
+  // A failure BEFORE it started is answered by the play() promise below, which
+  // may retry; only a failure after it started ends it here.
+  let started = false;
+  el.addEventListener("error", () => { if (started) shot.dispose(); });
   if (maxSeconds > 0) timer = setTimeout(() => shot.dispose(), maxSeconds * 1000);
-  el.play().then(() => onStart && onStart(), () => shot.dispose());
+  let retried = false;
+  const attempt = () => el.play().then(() => { started = true; if (onStart) onStart(); }, () => {
+    // A Suno song gets its other file once (see sunoFallback).
+    const other = !retried && sunoFallback(el.getAttribute("src"));
+    if (!other) { shot.dispose(); return; }
+    retried = true;
+    el.src = other;
+    attempt();
+  });
+  attempt();
   return shot;
 }
 

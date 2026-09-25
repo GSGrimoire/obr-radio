@@ -1,9 +1,9 @@
 {
   "name": "GS Grimoire Radio",
-  "version": "1.1",
+  "version": "1.1B",
   "manifest_version": 1,
   "author": "GS Grimoire",
-  "description": "Music, ambience and a soundboard for the whole table, from YouTube, Suno, SoundCloud, Dropbox and audio links, with sounds and scenes that react to the Dreams & Machines extension",
+  "description": "Music, ambience and a soundboard for the whole table. YouTube, Suno, SoundCloud and audio links. Reacts to Dreams & Machines.",
   "icon": "https://gsgrimoire.github.io/obr-radio/icon.svg",
   "action": {
     "title": "Radio",

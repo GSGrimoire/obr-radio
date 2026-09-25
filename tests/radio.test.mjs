@@ -1,7 +1,7 @@
 // radio.test.mjs — every rule, without a browser or a room.
 //   node tests/radio.test.mjs
 import {
-  parseLink, parseLine, parseTrackList, formatTrackList, readTrack, trackKey, safeUrl, isEmbed,
+  parseLink, parseLine, parseTrackList, formatTrackList, readTrack, trackKey, safeUrl, isEmbed, sunoFallback,
 } from "../sources.js";
 import {
   readLibrary, parseSoundList, formatSoundList, soundPages, MAX_TRACKS, MAX_LAYERS, emptyLibrary,
@@ -49,8 +49,12 @@ const YT = (v) => ({ k: "yt", v, t: "video " + v });
   ok("a YouTube link with no video is refused", !!parseLink("https://www.youtube.com/feed/library").error);
 
   const suno = parseLink(`https://suno.com/song/${UUID}`);
-  ok("a Suno song becomes its audio file", suno.track?.k === "a" && suno.track.u === `https://cdn1.suno.ai/${UUID}.mp3`);
-  ok("a Suno CDN link is accepted as is", parseLink(`https://cdn1.suno.ai/${UUID}.mp3`).track?.u === `https://cdn1.suno.ai/${UUID}.mp3`);
+  ok("a Suno song becomes its audio file", suno.track?.k === "a" && suno.track.u === `https://cdn1.suno.ai/${UUID}.mp4`);
+  ok("an old Suno .mp3 link becomes the file that still plays", parseLink(`https://cdn1.suno.ai/${UUID}.mp3`).track?.u === `https://cdn1.suno.ai/${UUID}.mp4`);
+  ok("a Suno .mp4 link is accepted", parseLink(`https://cdn1.suno.ai/${UUID}.mp4`).track?.u === `https://cdn1.suno.ai/${UUID}.mp4`);
+  ok("a Suno file falls back to its other format", sunoFallback(`https://cdn1.suno.ai/${UUID}.mp4`) === `https://cdn1.suno.ai/${UUID}.mp3`
+    && sunoFallback(`https://cdn1.suno.ai/${UUID}.mp3`) === `https://cdn1.suno.ai/${UUID}.mp4`);
+  ok("nothing else falls back", sunoFallback("https://x.test/a.mp3") === "" && sunoFallback("javascript:alert(1)") === "");
   const short = parseLink("https://suno.com/s/cq8ogDYThAoJj3fo");
   ok("a Suno short link says what to do instead", /suno\.com\/song/.test(short.error || ""));
   ok("a Suno playlist says to paste songs", /one per line/.test(parseLink("https://suno.com/playlist/d827cffa-9998-4ad5-86d4-6701d9a43869").error || ""));
@@ -99,8 +103,8 @@ const YT = (v) => ({ k: "yt", v, t: "video " + v });
   const embed = `<iframe src="https://suno.com/embed/${GUS}" width="760" height="240" frameborder="0" allow="autoplay; encrypted-media; fullscreen" allowfullscreen loading="lazy" referrerpolicy="no-referrer-when-downgrade"><a href="https://suno.com/song/${GUS}">Listen on Suno</a></iframe>`;
   const one = parseTrackList(embed);
   ok("Suno's embed code, pasted whole, is one song", one.tracks.length === 1 && one.errors.length === 0);
-  ok("and it is the right song", one.tracks[0]?.u === `https://cdn1.suno.ai/${GUS}.mp3`);
-  ok("the song page address works too", parseLink(`https://suno.com/song/${GUS}`).track?.u === `https://cdn1.suno.ai/${GUS}.mp3`);
+  ok("and it is the right song", one.tracks[0]?.u === `https://cdn1.suno.ai/${GUS}.mp4`);
+  ok("the song page address works too", parseLink(`https://suno.com/song/${GUS}`).track?.u === `https://cdn1.suno.ai/${GUS}.mp4`);
 
   const para = parseTrackList(`Tonight: https://suno.com/song/${GUS}, then https://youtu.be/_YsP_UGd8Ns.`);
   ok("a sentence with two links gives both", para.tracks.map((t) => t.k).join() === "a,yt");
@@ -434,6 +438,7 @@ const YT = (v) => ({ k: "yt", v, t: "video " + v });
   ok("every hosted file is credited", rows.filter((r) => r.file).every((r) => r.credit && r.credit.author && r.credit.url && r.credit.license));
   ok("nothing hosted is NonCommercial or NoDerivatives",
     rows.filter((r) => r.file).every((r) => ["CC0", "CC BY", "Public domain"].includes(r.credit.license)));
+  ok("every YouTube ambience names its channel", rows.filter((r) => /youtu/.test(r.link)).every((r) => r.by));
   ok("every CC BY file says what was changed", rows.filter((r) => r.credit && r.credit.license === "CC BY").every((r) => r.credit.changes));
 
   let lib = emptyLibrary();
@@ -468,6 +473,24 @@ const YT = (v) => ({ k: "yt", v, t: "video " + v });
   ok("a scene the GM already has is left alone", merged.scenes.filter((s) => s.name === "Tavern").length === 1 && merged.scenes.find((s) => s.name === "Tavern").id === "t");
   ok("the GM's own sounds are kept", merged.sounds.some((s) => s.id === "mine"));
   ok("an unknown pack is refused", !!addPack(emptyLibrary(), "nope").error);
+}
+
+// -------------------------------------------------------------
+// The manifest, as Owlbear checks it
+// -------------------------------------------------------------
+{
+  const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const { readFileSync } = await import("fs");
+  const m = JSON.parse(readFileSync(path.join(repo, "manifest.json"), "utf8"));
+  const { RADIO_VERSION } = await import("../radio.js");
+  // Owlbear refuses an extension whose description is over 128 characters; 1.1
+  // shipped one of 179 and could not be installed. Checked here so it cannot again.
+  ok(`the manifest description fits Owlbear's 128 characters (${m.description.length})`, typeof m.description === "string" && m.description.length <= 128);
+  ok("the manifest names itself and has version 1", !!m.name && m.manifest_version === 1 && !!m.author);
+  ok("the manifest version matches the code's", m.version === RADIO_VERSION);
+  ok("every manifest address is https on the Pages site",
+    [m.icon, m.action.icon, m.action.popover].every((u) => /^https:\/\/gsgrimoire\.github\.io\/obr-radio\//.test(u)));
+  ok("the popover has a size", m.action.width > 0 && m.action.height > 0 && !!m.action.title);
 }
 
 console.log(`radio: ${passed} passed, ${failed} failed`);

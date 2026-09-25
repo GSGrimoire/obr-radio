@@ -124,20 +124,20 @@ export const PACKS = [
       { name: "Sea waves", page: "Places", file: "amb/waves.ogg", credit: AMB.waves, vol: 0.6 },
       { name: "Ship creaking", page: "Places", file: "amb/ship-creak.ogg", credit: AMB.boat, vol: 0.5 },
       // Hour-long YouTube ambiences. They play in a visible video tile.
-      { name: "Tavern hubbub", page: "Video beds", link: "https://youtu.be/_P2O9ZXpKD8", vol: 0.7 },
-      { name: "Heroes' inn", page: "Video beds", link: "https://youtu.be/uaX-2RMzVvQ", vol: 0.7 },
-      { name: "Dark dungeon", page: "Video beds", link: "https://youtu.be/lY_bmhayPtw", vol: 0.7 },
-      { name: "Dungeon room", page: "Video beds", link: "https://youtu.be/upmAf3wWKKo", vol: 0.7 },
-      { name: "Humid cave", page: "Video beds", link: "https://youtu.be/H0cF3t01T-w", vol: 0.7 },
-      { name: "Battlefield", page: "Video beds", link: "https://youtu.be/-pSCxok55zw", vol: 0.6 },
-      { name: "Siege", page: "Video beds", link: "https://youtu.be/EspwQ6Phw0g", vol: 0.6 },
-      { name: "War machine factory", page: "Video beds", link: "https://youtu.be/nA6WZCslSiY", vol: 0.6 },
-      { name: "Abandoned factory", page: "Video beds", link: "https://youtu.be/-Ycu6uTPquc", vol: 0.6 },
+      { name: "Tavern hubbub", page: "Video beds", link: "https://youtu.be/_P2O9ZXpKD8", by: "Ambient Universe", vol: 0.7 },
+      { name: "Heroes' inn", page: "Video beds", link: "https://youtu.be/uaX-2RMzVvQ", by: "Michael Ghelfi Studios", vol: 0.7 },
+      { name: "Dark dungeon", page: "Video beds", link: "https://youtu.be/lY_bmhayPtw", by: "Dynamic Dungeons Animated Maps", vol: 0.7 },
+      { name: "Dungeon room", page: "Video beds", link: "https://youtu.be/upmAf3wWKKo", by: "Michael Ghelfi Studios", vol: 0.7 },
+      { name: "Humid cave", page: "Video beds", link: "https://youtu.be/H0cF3t01T-w", by: "Michael Ghelfi Studios", vol: 0.7 },
+      { name: "Battlefield", page: "Video beds", link: "https://youtu.be/-pSCxok55zw", by: "Michael Ghelfi Studios", vol: 0.6 },
+      { name: "Siege", page: "Video beds", link: "https://youtu.be/EspwQ6Phw0g", by: "Michael Ghelfi Studios", vol: 0.6 },
+      { name: "War machine factory", page: "Video beds", link: "https://youtu.be/nA6WZCslSiY", by: "Michael Ghelfi Studios", vol: 0.6 },
+      { name: "Abandoned factory", page: "Video beds", link: "https://youtu.be/-Ycu6uTPquc", by: "Paraclete", vol: 0.6 },
     ],
     lists: [
       { name: "Tavern music", tracks: [
-        "Shady Tavern | https://youtu.be/iQiUgrHqB9w",
-        "Medieval Fantasy Tavern | https://youtu.be/vyg5jJrZ42s",
+        "Shady Tavern | https://youtu.be/iQiUgrHqB9w | Bardify",
+        "Medieval Fantasy Tavern | https://youtu.be/vyg5jJrZ42s | Daydreaming of Persephone",
       ] },
     ],
     scenes: [
@@ -185,12 +185,19 @@ export const PACKS = [
     blurb: "The GS Grimoire free songs playlist from YouTube, and Liquid Banjo from Suno.",
     lists: [
       { name: "GS Grimoire free songs", tracks: [
-        "https://youtube.com/playlist?list=PLRy5AGzKZLmE",
-        "Liquid Banjo with a trumpet twist | https://suno.com/song/dd6fccb4-531b-4a6d-ba32-9a181e3c4670",
+        "GS Grimoire Free Song Sunday | https://youtube.com/playlist?list=PLRy5AGzKZLmE | GS Grimoire",
+        "Liquid Banjo with a trumpet twist | https://suno.com/song/dd6fccb4-531b-4a6d-ba32-9a181e3c4670 | GS Grimoire",
       ] },
     ],
   },
 ];
+
+// A pack playlist line: "Title | link | channel", title and channel optional.
+function splitListLine(line) {
+  const parts = line.split("|").map((x) => x.trim());
+  if (parts.length === 1) return ["", parts[0], ""];
+  return [parts[0], parts[1], parts[2] || ""];
+}
 
 // Every file credit, in one list, for credits.html and the tests.
 export function credits() {
@@ -201,14 +208,14 @@ export function credits() {
       const key = s.file || s.link;
       if (seen.has(key)) continue;
       seen.add(key);
-      rows.push({ pack: pack.name, name: s.name, file: s.file || "", link: s.link || "", credit: s.credit || null });
+      rows.push({ pack: pack.name, name: s.name, file: s.file || "", link: s.link || "", by: s.by || "", credit: s.credit || null });
     }
     for (const l of pack.lists || []) {
       for (const line of l.tracks) {
         if (seen.has(line)) continue;
         seen.add(line);
-        const [title, link] = line.includes("|") ? line.split("|").map((x) => x.trim()) : ["", line];
-        rows.push({ pack: pack.name, name: title || l.name, file: "", link, credit: null });
+        const [title, link, by] = splitListLine(line);
+        rows.push({ pack: pack.name, name: title || l.name, file: "", link, by, credit: null });
       }
     }
   }
@@ -252,7 +259,7 @@ export function addPack(lib, packId, { base = PACK_BASE, rand = Math.random } = 
   for (const l of pack.lists || []) {
     if (next.lists.some((x) => x.name === l.name)) { skipped += 1; continue; }
     const tracks = l.tracks.map((line) => {
-      const [title, link] = line.includes("|") ? line.split("|").map((x) => x.trim()) : ["", line];
+      const [title, link] = splitListLine(line);
       const found = parseLink(link);
       if (!found.track) throw new Error(`pack list "${l.name}": ${found.error}`);
       return title ? { ...found.track, t: title } : found.track;

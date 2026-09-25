@@ -10,7 +10,7 @@ a scene for initiative (and the music it interrupted, back afterwards), a sting 
 Threat rises, a sound for a critical or a complication. Without D&M it is a complete
 radio on its own.
 
-Version **1.1**. Not yet tried in a real room; see *Live checks* below.
+Version **1.1B**. Not yet tried in a real room; see *Live checks* below.
 
 **Install:** in Owlbear, add `https://gsgrimoire.github.io/obr-radio/manifest.json`.
 
@@ -150,9 +150,17 @@ are one-shot broadcasts from the GM's bar: nothing to sync, nothing to catch up 
   the tavern to its back room does not restart the rain.
 - **Advancing is guarded by `seq`.** A track ending advances only from the seq that
   ended, so two GM windows cannot skip two tracks for one ending.
-- **Suno's file address is one function**, `sunoAudioUrl()`. Suno has no public API;
-  `cdn1.suno.ai/<id>.mp3` is simply where its songs are. If it moves, that line
-  changes.
+- **A Suno link plays the song's public share video** (`cdn1.suno.ai/<id>.mp4`),
+  checked 2026-09-25. Suno has no public API and has closed the `.mp3` address
+  (its song pages now report the audio URL as "forbidden"). The streaming `.m4a` its
+  own player uses is scrambled on purpose, so the radio does not touch it. The share
+  video is served to any site, with byte ranges, and its AAC audio plays in any
+  browser's `<audio>`. If one Suno file fails, the other format is tried once
+  (`sunoFallback()`), which also keeps libraries saved with `.mp3` addresses working.
+  It is all in `sunoAudioUrl()` / `sunoFallback()`: when Suno changes again, that is
+  where. Suno's embed player has no remote control, so it cannot be synced.
+- **A track that will not load does not un-tune anyone.** Only an autoplay refusal
+  (`NotAllowedError`) asks for Tune in again; a broken link is skipped, or falls back.
 - **No `prompt()` or `confirm()`.** Owlbear frames extensions and a sandboxed frame
   may refuse modals. Deleting asks for a second press instead.
 
@@ -160,8 +168,8 @@ are one-shot broadcasts from the GM's bar: nothing to sync, nothing to catch up 
 
 ```sh
 npm install playwright --no-save
-node tests/radio.test.mjs     # every rule and every pack, no browser (182 checks)
-node tests/ui.test.mjs        # the bar, console, pop-out, packs and bookmark in Chromium (114 checks)
+node tests/radio.test.mjs     # every rule, every pack and the manifest, no browser (191 checks)
+node tests/ui.test.mjs        # the bar, console, pop-out, packs and bookmark in Chromium (117 checks)
 ```
 
 `ui.test.mjs` swaps the SDK for a stub in a staged copy under `out/`, and answers
@@ -177,9 +185,9 @@ bar, and follows a real pop-up for the popped-out window.
 2. **The popped-out console connects.** Owlbear's own security headers decide
    whether a window opened from its frames can talk back; if it cannot, the bar
    says so and the Radio panel does the same job.
-3. Suno's `cdn1.suno.ai/<id>.mp3` plays for a page on `gsgrimoire.github.io`
-   (try *Liquid Banjo*, `suno.com/song/dd6fccb4-531b-4a6d-ba32-9a181e3c4670`), and
-   joining partway lands at the right place.
+3. A Suno song plays (try *Liquid Banjo*, `suno.com/song/dd6fccb4-531b-4a6d-ba32-9a181e3c4670`),
+   and joining partway lands at the right place. The test browser here has no AAC
+   decoder, so the share video's sound is checked only in a real browser.
 4. YouTube's real player starts from the Tune in press, or shows "Press play on the
    video once". Try the GS Grimoire playlist.
 5. SoundCloud's real widget plays inside the bar and seeks where it is told.
@@ -195,6 +203,11 @@ bar, and follows a real pop-up for the popped-out window.
 
 ## Releases
 
+- **1.1B**: the manifest description fits Owlbear's 128-character limit (1.1 could
+  not be installed); Suno links play the song's share video, as Suno closed its .mp3
+  addresses, with a fallback between the two; a track that fails to load no longer
+  un-tunes the listener; the YouTube ambiences are verified embeddable and credited
+  to their channels.
 - **1.1**: starter packs — 33 effects, 13 ambience loops, 9 YouTube ambiences, 10
   scenes, a tavern playlist, cues and reactions for D&M dice, and the GS Grimoire
   music — with a credits page. All hosted files CC0, CC BY or public domain.

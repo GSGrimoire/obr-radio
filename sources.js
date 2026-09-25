@@ -62,11 +62,33 @@ export function safeUrl(raw) {
   return url.href;
 }
 
-// Suno serves each song's audio as <uuid>.mp3 from its CDN. Suno has no public API,
-// so this is simply where its files are. It is one function on purpose: if Suno
-// moves them, this line changes and nothing else does.
+// Where a Suno song can be streamed from another site. Suno has no public API, so
+// this is simply what Suno publishes, checked 2026-09-25:
+//
+//   <uuid>.mp3  on cdn1   CLOSED. The song page now reports its audio_url as
+//                         ".../api/forbidden" and the CDN answers 403.
+//   <uuid>.m4a  (CloudFront, the page's "media_urls") is SCRAMBLED — no valid audio
+//                         header; Suno's own player unscrambles it. Deliberately
+//                         protected, so deliberately not used.
+//   <uuid>.mp4  on cdn1   OPEN: the song's share video, served to any site
+//                         (Access-Control-Allow-Origin: *) with byte ranges. Its
+//                         audio track is ordinary AAC, which every browser plays in
+//                         an <audio> element.
+//
+// So the share video it is. It is one function on purpose: when Suno changes this
+// again, this is the line that changes. sunoFallback() keeps a library saved with
+// the old .mp3 addresses working, and gives newer songs a second chance.
+const SUNO_FILE = /^https:\/\/cdn1\.suno\.ai\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.(mp3|mp4)$/i;
+
 export function sunoAudioUrl(uuid) {
-  return `https://cdn1.suno.ai/${uuid.toLowerCase()}.mp3`;
+  return `https://cdn1.suno.ai/${uuid.toLowerCase()}.mp4`;
+}
+
+// The other Suno file to try when one will not play, or "" when there is none.
+export function sunoFallback(url) {
+  const m = SUNO_FILE.exec(String(url || ""));
+  if (!m) return "";
+  return `https://cdn1.suno.ai/${m[1].toLowerCase()}.${m[2].toLowerCase() === "mp4" ? "mp3" : "mp4"}`;
 }
 
 // A Dropbox share link opens a web page (dl=0). The same link with raw=1 is the
@@ -153,7 +175,7 @@ export function parseLink(raw) {
     return { error: "That Suno link names no song." };
   }
   if (/^cdn\d*\.suno\.ai$/.test(host)) {
-    const id = (parts[0] || "").replace(/\.mp3$/i, "");
+    const id = (parts[0] || "").replace(/\.(mp3|mp4)$/i, "");
     if (UUID.test(id)) return { track: { k: "a", u: sunoAudioUrl(id), t: "Suno song", s: src } };
     return { error: "That Suno file link names no song." };
   }

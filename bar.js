@@ -167,6 +167,13 @@ function applyVolumes() {
   }
 }
 
+// A play() that fails is only an autoplay block when the browser says so. A track
+// that will not load also rejects play() — and treating that as "not tuned in"
+// silenced the listener and threw the player away before its fallback could run.
+function blocked(err) {
+  if (err && err.name === "NotAllowedError") untuned();
+}
+
 function untuned() {
   tuned = false;
   render();
@@ -229,14 +236,14 @@ function syncMusic() {
     applyVolumes();
     Promise.resolve(player.load(expected, m.sub)).then(() => {
       if (m.paused !== null) player.pause();
-      else player.play().catch(untuned);
+      else player.play().catch(blocked);
     }).catch(() => {});
     return;
   }
   const p = music.player;
   if (m.paused !== null) { if (p.playing()) p.pause(); return; }
   if (!p.playing() && p.ready()) {
-    Promise.resolve(p.play()).catch(untuned);
+    Promise.resolve(p.play()).catch(blocked);
     if (p.stalled && p.stalled() && music.started && Date.now() - music.started > 4000) {
       setStatus("Press play on the video once.");
     }
@@ -264,12 +271,12 @@ function syncLayers() {
       layers.set(id, ch);
       applyVolumes();
       const start = S.layerPosition(l, gmNow(), NaN);
-      Promise.resolve(player.load(start)).then(() => player.play().catch(untuned)).catch(() => {});
+      Promise.resolve(player.load(start)).then(() => player.play().catch(blocked)).catch(() => {});
       continue;
     }
     const p = ch.player;
     if (!p.ready()) continue;
-    if (!p.playing()) { Promise.resolve(p.play()).catch(untuned); continue; }
+    if (!p.playing()) { Promise.resolve(p.play()).catch(blocked); continue; }
     // Everyone, the GM included, is pulled to the layer's clock: a loop has no
     // "truth" worth protecting, only a place everyone should be.
     const dur = p.duration();
