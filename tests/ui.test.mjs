@@ -1,23 +1,25 @@
 // =============================================================
-// ui.test.mjs — the bar and the panel, running for real in Chromium.
+// ui.test.mjs — the bar and the console, running for real in Chromium.
 // -------------------------------------------------------------
-// The SDK is swapped for a stub in a staged copy (bar.js and panel.js import
-// "./sdk.js", so replacing that one file is enough). Suno's CDN and YouTube's
-// iframe API are answered by request interception: generated WAV files for the
-// audio, and a fake YT.Player that records what it was told. Nothing leaves the
-// machine, which also means NOTHING HERE PROVES that Suno or YouTube behave the way
-// the stubs do — see the live checks in the README.
+// The SDK is swapped for a stub in a staged copy (every page imports "./sdk.js",
+// so replacing that one file is enough). Suno's CDN, YouTube's iframe API and
+// SoundCloud's widget API are answered by request interception: generated WAV
+// files, served with byte ranges as a real CDN does, and fake players that record
+// what they were told. Nothing leaves the machine — which also means NOTHING HERE
+// PROVES that Suno, YouTube, SoundCloud or Owlbear behave the way the stubs do.
+// See the live checks in the README.
 //
 // Served over http, never file://: Chromium will not load an ES module from disk
 // and says so only in the console, so a file:// suite passes against a page whose
-// code never ran. (Learned the hard way in dnm-cc; see its serve.mjs.)
+// code never ran. (Learned the hard way in dnm-cc; see serve.mjs.)
 // =============================================================
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { chromium } from "playwright";
 import { serve } from "./serve.mjs";
-import { STATE_KEY, LIBRARY_KEY, DNM_ROOM_KEY, CHANNEL, parseTrackList } from "../radio.js";
+import { STATE_KEY, LIBRARY_KEY, DNM_ROOM_KEY, CHANNEL, SCENE_KEY, PREFS_KEY, RESUME_KEY } from "../radio.js";
+import { parseTrackList } from "../sources.js";
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) pass++; else { fail++; console.log("  FAIL:", name); } };
@@ -56,21 +58,24 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const stage = path.join(repo, "out", "stub");
 fs.rmSync(stage, { recursive: true, force: true });
 fs.mkdirSync(stage, { recursive: true });
-for (const f of ["index.html", "bar.html", "panel.js", "bar.js", "radio.js", "style.css", "suno.html", "suno-collect.js"]) {
-  fs.copyFileSync(path.join(repo, f), path.join(stage, f));
+for (const f of fs.readdirSync(repo)) {
+  if (/\.(html|js|css|svg)$/.test(f) && f !== "sdk.js") fs.copyFileSync(path.join(repo, f), path.join(stage, f));
 }
 fs.writeFileSync(path.join(stage, "sdk.js"), `
-// Stub SDK: only what bar.js and panel.js touch.
+// Stub SDK: only what the radio touches. window.__want configures it per page.
 const want = window.__want || {};
-const subs = { player: [], party: [], meta: [], msg: {} };
+const subs = { player: [], party: [], meta: [], msg: {}, sceneReady: [], sceneMeta: [] };
 const clone = (x) => JSON.parse(JSON.stringify(x));
 const st = {
   role: want.role || "GM",
   conn: want.conn || "conn-self",
   players: want.players || [],
   meta: want.meta || {},
+  sceneReady: want.sceneReady !== false,
+  sceneMeta: want.sceneMeta || {},
   sent: [],
   popover: [],
+  action: [],
 };
 const on = (list) => (cb) => { list.push(cb); return () => {}; };
 function pushMeta() { const snap = clone(st.meta); subs.meta.forEach((cb) => cb(snap)); }
@@ -90,6 +95,16 @@ const OBR = {
     setMetadata: async (m) => { Object.assign(st.meta, clone(m)); pushMeta(); },
     onMetadataChange: on(subs.meta),
   },
+  scene: {
+    isReady: async () => st.sceneReady,
+    onReadyChange: on(subs.sceneReady),
+    getMetadata: async () => clone(st.sceneMeta),
+    setMetadata: async (m) => {
+      for (const [k, v] of Object.entries(m)) { if (v === undefined) delete st.sceneMeta[k]; else st.sceneMeta[k] = clone(v); }
+      subs.sceneMeta.forEach((cb) => cb(clone(st.sceneMeta)));
+    },
+    onMetadataChange: on(subs.sceneMeta),
+  },
   broadcast: {
     onMessage: (ch, cb) => { (subs.msg[ch] = subs.msg[ch] || []).push(cb); return () => {}; },
     sendMessage: async (ch, data, opts) => {
@@ -103,7 +118,11 @@ const OBR = {
     open: async (o) => { st.popover.push(["open", o]); },
     close: async (id) => { st.popover.push(["close", id]); },
     setHeight: async (id, h) => { st.popover.push(["height", h]); },
-    setWidth: async () => {},
+    setWidth: async (id, w) => { st.popover.push(["width", w]); },
+  },
+  action: {
+    setWidth: async (w) => { st.action.push(["width", w]); },
+    setHeight: async (h) => { st.action.push(["height", h]); },
   },
   viewport: { getWidth: async () => 1600, getHeight: async () => 900 },
 };
@@ -111,12 +130,13 @@ window.__stub = {
   st,
   patchMeta(m) { Object.assign(st.meta, clone(m)); pushMeta(); },
   deliver(ch, data, connectionId) { (subs.msg[ch] || []).forEach((cb) => cb({ data, connectionId })); },
+  sceneReadyChange(ready) { st.sceneReady = ready; subs.sceneReady.forEach((cb) => cb(ready)); },
 };
 export default OBR;
 `);
 
 // -------------------------------------------------------------
-// Fake media and a fake YouTube
+// Fake media, a fake YouTube, a fake SoundCloud
 // -------------------------------------------------------------
 function wav(seconds, freq = 440) {
   const rate = 8000;
@@ -131,21 +151,24 @@ function wav(seconds, freq = 440) {
 }
 const LONG = wav(90);
 const SHORT = wav(1.5);
+const CLIP = wav(3, 880);
 const U_LONG = "0f6d3c1e-2b8a-4e5f-9a7b-1c2d3e4f5a6b";
 const U_SHORT = "11111111-2222-4333-8444-555555555555";
 const SUNO = (u) => `https://cdn1.suno.ai/${u}.mp3`;
+const FILE = (name) => `https://files.test/${name}.mp3`;
 
 const YT_STUB = `
+window.__yts = [];
 window.YT = {
   PlayerState: { UNSTARTED: -1, ENDED: 0, PLAYING: 1, PAUSED: 2, BUFFERING: 3, CUED: 5 },
   Player: class {
-    constructor(id, opts) {
-      this.opts = opts; this.calls = []; this.state = -1; this.t = 0; this.idx = 0; this.list = null;
-      window.__yt = this;
+    constructor(el, opts) {
+      this.opts = opts; this.calls = []; this.state = -1; this.t = 0; this.idx = 0; this.list = null; this.vid = "";
+      window.__yt = this; window.__yts.push(this);
       setTimeout(() => opts.events.onReady({ target: this }), 10);
     }
     fire(s) { this.state = s; setTimeout(() => this.opts.events.onStateChange({ data: s, target: this }), 5); }
-    loadVideoById(o) { this.calls.push(["loadVideoById", o]); this.list = null; this.t = o.startSeconds || 0; this.fire(1); }
+    loadVideoById(o) { this.calls.push(["loadVideoById", o]); this.vid = o.videoId; this.list = null; this.t = o.startSeconds || 0; this.fire(1); }
     loadPlaylist(o) { this.calls.push(["loadPlaylist", o]); this.list = o; this.idx = o.index || 0; this.t = o.startSeconds || 0; this.fire(1); }
     playVideoAt(i) { this.calls.push(["playVideoAt", i]); this.idx = i; this.t = 0; this.fire(1); }
     playVideo() { this.calls.push(["playVideo"]); this.fire(1); }
@@ -153,27 +176,44 @@ window.YT = {
     stopVideo() { this.calls.push(["stopVideo"]); this.state = 5; }
     seekTo(t) { this.calls.push(["seekTo", t]); this.t = t; }
     getCurrentTime() { return this.t; }
+    getDuration() { return 300; }
     getPlayerState() { return this.state; }
     setVolume(v) { this.vol = v; }
     getPlaylistIndex() { return this.list ? this.idx : -1; }
     getPlaylist() { return this.list ? ["a", "b", "c"] : null; }
-    getVideoData() { return { title: "Stub video " + this.idx }; }
+    getVideoData() { return { title: "Stub video " + (this.list ? this.idx : this.vid) }; }
+    destroy() { this.calls.push(["destroy"]); this.destroyed = true; }
   },
 };
 setTimeout(() => window.onYouTubeIframeAPIReady && window.onYouTubeIframeAPIReady(), 0);
 `;
 
+const SC_STUB = `
+window.__scs = [];
+window.SC = { Widget: Object.assign(function (frame) {
+  const handlers = {};
+  const w = {
+    frame, calls: [], vol: null,
+    bind(ev, cb) { (handlers[ev] = handlers[ev] || []).push(cb); if (ev === "ready") setTimeout(() => cb(), 10); },
+    fire(ev, data) { (handlers[ev] || []).forEach((cb) => cb(data)); },
+    play() { this.calls.push(["play"]); this.fire("play"); },
+    pause() { this.calls.push(["pause"]); this.fire("pause"); },
+    seekTo(ms) { this.calls.push(["seekTo", ms]); },
+    setVolume(v) { this.vol = v; },
+    getDuration(cb) { cb(120000); },
+  };
+  window.__sc = w; window.__scs.push(w);
+  return w;
+}, { Events: { READY: "ready", PLAY: "play", PAUSE: "pause", FINISH: "finish", PLAY_PROGRESS: "playProgress", ERROR: "error" } }) };
+`;
+
 const site = await serve(stage);
 
-async function open(page, { file = "bar.html", role = "PLAYER", conn = "conn-self", players, meta = {}, library = null } = {}) {
-  const errors = [];
-  page.on("pageerror", (e) => errors.push(e.message));
-  // Short, so a page whose script died fails in seconds instead of hanging on
-  // Playwright's thirty-second wait for a button that will never work.
-  page.setDefaultTimeout(5000);
-  await page.route("https://cdn1.suno.ai/**", async (route) => {
+async function routes(page) {
+  const media = (route) => {
     const url = route.request().url();
-    const body = url.includes(U_SHORT) ? SHORT : url.includes(U_LONG) ? LONG : wav(3, 880);
+    const body = url.includes(U_SHORT) || url.includes("short") ? SHORT
+      : url.includes(U_LONG) || url.includes("long") ? LONG : CLIP;
     // Byte ranges, as a real CDN serves them. Without them Chromium cannot seek past
     // what it has buffered, and a far seek quietly lands back at the start.
     const range = /bytes=(\d+)-(\d*)/.exec(route.request().headers().range || "");
@@ -183,317 +223,501 @@ async function open(page, { file = "bar.html", role = "PLAYER", conn = "conn-sel
     }
     const start = Number(range[1]);
     const end = range[2] ? Math.min(Number(range[2]), body.length - 1) : body.length - 1;
-    route.fulfill({
-      status: 206, contentType: "audio/wav", body: body.subarray(start, end + 1),
-      headers: { "Accept-Ranges": "bytes", "Content-Range": `bytes ${start}-${end}/${body.length}` },
-    });
-  });
-  await page.route("https://www.youtube.com/iframe_api", (route) =>
-    route.fulfill({ status: 200, contentType: "text/javascript", body: YT_STUB }));
-  await page.addInitScript(({ want, lib, key }) => {
+    route.fulfill({ status: 206, contentType: "audio/wav", body: body.subarray(start, end + 1),
+      headers: { "Accept-Ranges": "bytes", "Content-Range": `bytes ${start}-${end}/${body.length}` } });
+  };
+  await page.route("https://cdn1.suno.ai/**", media);
+  await page.route("https://files.test/**", media);
+  await page.route("https://www.youtube.com/iframe_api", (r) => r.fulfill({ status: 200, contentType: "text/javascript", body: YT_STUB }));
+  await page.route("https://w.soundcloud.com/player/api.js", (r) => r.fulfill({ status: 200, contentType: "text/javascript", body: SC_STUB }));
+  await page.route("https://w.soundcloud.com/player/?**", (r) => r.fulfill({ status: 200, contentType: "text/html", body: "<!DOCTYPE html><title>sc</title>" }));
+}
+
+const GM_ONLY = [{ role: "GM", connectionId: "conn-gm" }, { role: "PLAYER", connectionId: "conn-x" }];
+
+async function open(page, { file = "bar.html", role = "PLAYER", conn = "conn-self", players, meta = {}, library = null,
+  prefs = null, sceneMeta, sceneReady } = {}) {
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  // Short, so a page whose script died fails in seconds instead of hanging on
+  // Playwright's thirty-second wait for a button that will never work.
+  page.setDefaultTimeout(5000);
+  await routes(page);
+  await page.addInitScript(({ want, lib, libKey, prefs, prefsKey }) => {
     window.__want = want;
-    if (lib) localStorage.setItem(key, JSON.stringify(lib));
+    try {
+      if (lib && !localStorage.getItem("__seeded")) { localStorage.setItem(libKey, JSON.stringify(lib)); localStorage.setItem("__seeded", "1"); }
+      if (prefs) localStorage.setItem(prefsKey, JSON.stringify(prefs));
+    } catch (err) { /* ignore */ }
   }, {
-    want: { role, conn, meta, players: players || [{ role: "GM", connectionId: "conn-gm" }, { role: "PLAYER", connectionId: "conn-x" }] },
-    lib: library, key: LIBRARY_KEY,
+    want: { role, conn, meta, players: players || GM_ONLY, sceneMeta, sceneReady },
+    lib: library, libKey: LIBRARY_KEY, prefs, prefsKey: PREFS_KEY,
   });
   await page.goto(site.origin + "/" + file);
   await page.waitForFunction(() => !!window.__stub);
-  await sleep(150);
+  await sleep(200);
   return errors;
 }
 
-const audioState = (page, id = "music") => page.evaluate((i) => {
-  const a = document.getElementById(i);
-  return { src: a.getAttribute("src") || "", paused: a.paused, t: a.currentTime, vol: a.volume };
-}, id);
+const media = (page, sel) => page.evaluate((s) => [...document.querySelectorAll(s)].map((a) => ({
+  src: a.getAttribute("src") || "", paused: a.paused, t: a.currentTime, vol: a.volume, layer: a.dataset.layer || "",
+})), sel);
+const musicEl = async (page) => (await media(page, 'audio[data-role="music"]'))[0] || { src: "", paused: true, t: 0, vol: 0 };
 const roomState = (page) => page.evaluate((k) => window.__stub.st.meta[k], STATE_KEY);
 const sent = (page) => page.evaluate(() => window.__stub.st.sent);
+const deliver = (page, data, conn = "conn-gm") => page.evaluate(({ ch, d, c }) => window.__stub.deliver(ch, d, c), { ch: CHANNEL, d: data, c: conn });
+const patchMeta = (page, m) => page.evaluate((x) => window.__stub.patchMeta(x), m);
+const room = (music, amb = []) => ({ [STATE_KEY]: { v: 2, music, amb, scene: "" } });
+const tune = async (page) => { await page.click("#tune"); };
 
 // -------------------------------------------------------------
-// 1. A player joining a track already five seconds in
+// 1. A player joining music already five seconds in
 // -------------------------------------------------------------
 {
   const page = await browser.newPage();
-  const running = { v: 1, seq: 1, track: { k: "a", u: SUNO(U_LONG), t: "Liquid Banjo" }, at: Date.now() - 5000, paused: null, label: "Explore" };
-  const errors = await open(page, { meta: { [STATE_KEY]: running } });
+  const errors = await open(page, { meta: room({ seq: 1, track: { k: "a", u: SUNO(U_LONG), t: "Liquid Banjo" }, at: Date.now() - 5000, paused: null, label: "Explore", vol: 1 }) });
   ok("player: nothing throws", errors.length === 0);
   if (errors.length) console.log("     ", errors[0]);
   ok("player: the title shows before tuning in", (await page.textContent("#title")) === "Liquid Banjo");
-  ok("player: no sound before the press", (await audioState(page)).src === "");
-  ok("player: the Tune in button is offered", await page.isVisible("#tune"));
-  ok("player: no GM controls", !(await page.isVisible("#next")));
-  ok("player: it said hello to get the time", (await sent(page)).some((m) => m.data.type === "hello"));
+  ok("player: no sound before the press", (await media(page, "audio")).length === 0);
+  ok("player: no GM controls, no console window button", !(await page.isVisible("#next")) && !(await page.isVisible("#popout")));
+  ok("player: it asked for the time", (await sent(page)).some((m) => m.data.type === "hello"));
 
-  await page.click("#tune");
-  await page.waitForFunction(() => { const a = document.getElementById("music"); return !a.paused && a.currentTime > 4; }, null, { timeout: 5000 }).catch(() => {});
-  let a = await audioState(page);
+  await tune(page);
+  await page.waitForFunction(() => { const a = document.querySelector('audio[data-role="music"]'); return a && !a.paused && a.currentTime > 4 && !a.seeking; }, null, { timeout: 5000 }).catch(() => {});
+  let a = await musicEl(page);
   ok("player: tuning in plays the Suno file", a.src === SUNO(U_LONG) && !a.paused);
   ok(`player: from where the room is (${a.t.toFixed(1)}s)`, a.t > 4 && a.t < 8);
-  ok("player: the button goes away", !(await page.isVisible("#tune")));
+  await sleep(1700);
+  a = await musicEl(page);
+  ok(`player: faded in to their music level (${a.vol.toFixed(2)})`, Math.abs(a.vol - 0.6) < 0.02);
 
-  // The GM's clock is a minute ahead of ours.
-  await page.evaluate(({ ch }) => window.__stub.deliver(ch, { type: "tick", now: Date.now() + 60000 }, "conn-gm"), { ch: CHANNEL });
+  await deliver(page, { type: "tick", now: Date.now() + 60000 });
+  await sleep(700);
+  a = await musicEl(page);
+  ok(`player: a GM tick corrects for the clock (${a.t.toFixed(1)}s)`, a.t > 63 && a.t < 70);
+  await deliver(page, { type: "tick", now: Date.now() - 600000 }, "conn-x");
   await sleep(600);
-  a = await audioState(page);
-  ok(`player: a GM tick corrects for the clock (${a.t.toFixed(1)}s)`, a.t > 63 && a.t < 69);
-  if (!(a.t > 63)) console.log("      DIAG", JSON.stringify(await page.evaluate(() => { const x = document.getElementById("music"); return { rs: x.readyState, seeking: x.seeking, paused: x.paused, dur: x.duration, buffered: x.buffered.length, t: x.currentTime }; })));
+  ok("player: a tick from a player is ignored", (await musicEl(page)).t > 63);
 
-  // A player cannot set everyone's clock.
-  await page.evaluate(({ ch }) => window.__stub.deliver(ch, { type: "tick", now: Date.now() - 600000 }, "conn-x"), { ch: CHANNEL });
-  await sleep(600);
-  a = await audioState(page);
-  ok("player: a tick from a player is ignored", a.t > 63);
-
-  // Stingers
-  await page.evaluate(({ ch, u }) => window.__stub.deliver(ch, { type: "cue", track: { k: "a", u, t: "x" }, secs: 3 }, "conn-x"), { ch: CHANNEL, u: SUNO("22222222-2222-4222-8222-222222222222") });
-  await sleep(300);
-  ok("player: a cue from a player is ignored", (await audioState(page, "fx")).src === "");
-  await page.evaluate(({ ch }) => window.__stub.deliver(ch, { type: "cue", track: { k: "a", u: "javascript:alert(1)" }, secs: 3 }, "conn-gm"), { ch: CHANNEL });
-  await sleep(300);
-  ok("player: a hostile cue is ignored", (await audioState(page, "fx")).src === "");
-  await page.evaluate(({ ch, u }) => window.__stub.deliver(ch, { type: "cue", track: { k: "a", u, t: "x" }, secs: 3 }, "conn-gm"), { ch: CHANNEL, u: SUNO("33333333-3333-4333-8333-333333333333") });
-  await sleep(400);
-  const fx = await audioState(page, "fx");
-  a = await audioState(page);
-  ok("player: the GM's cue plays", fx.src.includes("33333333") && !fx.paused);
-  ok(`player: and the music ducks under it (${a.vol.toFixed(2)})`, a.vol < 0.3);
-  await sleep(3200);
-  a = await audioState(page);
-  ok(`player: the music comes back after (${a.vol.toFixed(2)})`, a.vol > 0.5);
-
-  // Pause from the room
-  await page.evaluate(({ k }) => window.__stub.patchMeta({ [k]: { ...window.__stub.st.meta[k], paused: 70 } }), { k: STATE_KEY });
-  await sleep(300);
-  ok("player: the room pausing pauses the music", (await audioState(page)).paused);
-
-  // A hostile state
-  await page.evaluate(({ k }) => window.__stub.patchMeta({ [k]: { seq: 9, track: { k: "a", u: "javascript:alert(1)" }, at: 0 } }), { k: STATE_KEY });
-  await sleep(300);
-  ok("player: a hostile track is not loaded", (await audioState(page)).src === "");
-  ok("player: and reads as nothing playing", (await page.textContent("#title")) === "Nothing playing");
-  await page.close();
-}
-
-{
-  // The same correction, landing while a seek is still under way. That race is what
-  // made the test above fail about one run in six: the tick arrived while the
-  // player's first seek was in flight (logged: readyState 1, seeking true), the
-  // correction was skipped, and nothing looked again for four seconds. A real
-  // network will not open that gap on demand, so it is opened by hand: the element
-  // reports "seeking" while the tick arrives, then the seek lands.
-  const page = await browser.newPage();
-  const running = { v: 1, seq: 1, track: { k: "a", u: SUNO(U_LONG), t: "Long" }, at: Date.now() - 5000, paused: null };
-  const errors = await open(page, { meta: { [STATE_KEY]: running } });
-  await page.click("#tune");
-  await page.waitForFunction(() => { const x = document.getElementById("music"); return x.readyState >= 3 && !x.seeking && !x.paused; });
+  // A correction landing mid-seek waits for the seek, not for the next check.
   await page.evaluate(({ ch }) => {
-    const x = document.getElementById("music");
+    const x = document.querySelector('audio[data-role="music"]');
     Object.defineProperty(x, "seeking", { get: () => true, configurable: true });
-    window.__stub.deliver(ch, { type: "tick", now: Date.now() + 60000 }, "conn-gm");
+    window.__stub.deliver(ch, { type: "tick", now: Date.now() + 20000 }, "conn-gm");
   }, { ch: CHANNEL });
   await sleep(200);
-  ok("player: mid-seek, the correction waits (the gap is really open)", (await audioState(page)).t < 20);
-  await page.evaluate(() => {
-    const x = document.getElementById("music");
-    delete x.seeking;
-    x.dispatchEvent(new Event("seeked"));
-  });
+  ok("player: mid-seek, the correction waits", (await musicEl(page)).t > 60);
+  await page.evaluate(() => { const x = document.querySelector('audio[data-role="music"]'); delete x.seeking; x.dispatchEvent(new Event("seeked")); });
   await sleep(600);
-  const a = await audioState(page);
-  ok(`player: the moment the seek lands, it corrects (${a.t.toFixed(1)}s), not four seconds later`, a.t > 63 && a.t < 70);
-  ok("player: nothing throws", errors.length === 0);
+  a = await musicEl(page);
+  ok(`player: the moment the seek lands, it corrects (${a.t.toFixed(1)}s)`, a.t > 23 && a.t < 30);
+
+  await patchMeta(page, room({ seq: 9, track: { k: "a", u: "javascript:alert(1)" }, at: 0 }));
+  await sleep(2000);
+  ok("player: a hostile track is never loaded", (await media(page, 'audio[data-role="music"]')).length === 0);
+  ok("player: and reads as nothing playing", (await page.textContent("#title")) === "Nothing playing");
+  ok("player: nothing threw along the way", errors.length === 0);
   await page.close();
 }
 
 // -------------------------------------------------------------
-// 2. The GM's bar conducts
+// 2. Ambience layers under the music
 // -------------------------------------------------------------
 {
   const page = await browser.newPage();
-  const library = {
-    lists: [
-      { id: "ex", name: "Explore", tracks: [
-        { k: "a", u: SUNO(U_SHORT), t: "Short" },
-        { k: "a", u: SUNO(U_LONG), t: "Long" },
-      ] },
-      { id: "cb", name: "Combat", tracks: [{ k: "yt", v: "_YsP_UGd8Ns", t: "Fight!" }] },
-    ],
-    combatList: "cb",
-    cues: { threatUp: { k: "a", u: SUNO("44444444-4444-4444-8444-444444444444"), t: "sting" } },
-    cueSeconds: 3,
-  };
-  const dnm = { threat: 0, momentum: 2, initiative: null, epochs: { breather: 0, break: 0, bed: 0, scene: 0, session: 0, adventure: 0 } };
+  const now = Date.now();
+  const errors = await open(page, { meta: room(
+    { seq: 1, track: { k: "a", u: FILE("long-music"), t: "Music" }, at: now, paused: null, vol: 1 },
+    [
+      { id: "Lrain", track: { k: "a", u: FILE("long-rain"), t: "Rain" }, at: now - 100000, vol: 0.5, mode: "loop", min: 20, max: 60, label: "Rain" },
+      { id: "Lfire", track: { k: "a", u: FILE("clip-fire"), t: "Fire" }, at: now, vol: 1, mode: "loop", min: 20, max: 60, label: "Fire" },
+      { id: "Lgull", track: { k: "a", u: FILE("clip-gull"), t: "Gull" }, at: now, vol: 1, mode: "scatter", min: 10, max: 20, label: "Gull" },
+    ]) });
+  await tune(page);
+  await sleep(2200);
+  const all = await media(page, "audio");
+  const rain = all.find((x) => x.layer === "Lrain");
+  const fire = all.find((x) => x.layer === "Lfire");
+  ok("layers: music and two loops play together", all.filter((x) => !x.paused).length === 3);
+  ok("layers: a scattered layer has no player of its own", !all.some((x) => x.layer === "Lgull"));
+  ok(`layers: a loop joined late lands inside the loop (${rain && rain.t.toFixed(1)}s of 90)`, !!rain && rain.t > 8 && rain.t < 14);
+  ok(`layers: each at its level × the player's ambience level (${rain && rain.vol.toFixed(2)})`, !!rain && Math.abs(rain.vol - 0.3) < 0.02 && Math.abs(fire.vol - 0.6) < 0.02);
+
+  await patchMeta(page, room({ seq: 1, track: { k: "a", u: FILE("long-music"), t: "Music" }, at: now, paused: null, vol: 1 },
+    [{ id: "Lfire", track: { k: "a", u: FILE("clip-fire"), t: "Fire" }, at: now, vol: 1, mode: "loop", min: 20, max: 60, label: "Fire" }]));
+  await sleep(300);
+  const fading = (await media(page, "audio")).find((x) => x.layer === "Lrain");
+  ok("layers: a stopped layer fades rather than cuts", !!fading && fading.vol > 0 && fading.vol < 0.3);
+  await sleep(1800);
+  ok("layers: and is gone once faded", !(await media(page, "audio")).some((x) => x.layer === "Lrain"));
+  ok("layers: the others play on", (await media(page, "audio")).filter((x) => !x.paused).length === 2);
+  ok("layers: nothing throws", errors.length === 0);
+  if (errors.length) console.log("     ", errors[0]);
+  await page.close();
+}
+
+// -------------------------------------------------------------
+// 3. The soundboard and scattered sounds, as a player hears them
+// -------------------------------------------------------------
+{
+  const page = await browser.newPage();
+  const errors = await open(page, { meta: room({ seq: 1, track: { k: "a", u: FILE("long-music"), t: "Music" }, at: Date.now(), paused: null, vol: 1 }) });
+  await tune(page);
+  await sleep(2000);
+  await deliver(page, { type: "sound", track: { k: "a", u: FILE("clip-horn"), t: "Horn" }, vol: 1 }, "conn-x");
+  await deliver(page, { type: "sound", track: { k: "a", u: "javascript:alert(1)" }, vol: 1 });
+  await sleep(300);
+  ok("sounds: a player cannot put a sound on everyone's speakers", (await media(page, 'audio[data-role="shot"]')).length === 0);
+  await deliver(page, { type: "sound", track: { k: "a", u: FILE("clip-horn"), t: "Horn" }, vol: 0.5 });
+  await sleep(400);
+  let shots = await media(page, 'audio[data-role="shot"]');
+  ok("sounds: the GM's press plays", shots.length === 1 && !shots[0].paused);
+  ok(`sounds: at the sound's level × the player's sounds level (${shots[0] && shots[0].vol.toFixed(2)})`, !!shots[0] && Math.abs(shots[0].vol - 0.4) < 0.02);
+  ok(`sounds: the music ducks under it (${(await musicEl(page)).vol.toFixed(2)})`, (await musicEl(page)).vol < 0.3);
+  await sleep(3300);
+  ok("sounds: and comes back after", (await musicEl(page)).vol > 0.5 && (await media(page, 'audio[data-role="shot"]')).length === 0);
+  await deliver(page, { type: "shot", track: { k: "a", u: FILE("clip-gull"), t: "Gull" }, vol: 1, layer: "L1" });
+  await sleep(400);
+  shots = await media(page, 'audio[data-role="shot"]');
+  ok("sounds: a scattered gull plays", shots.length === 1);
+  ok("sounds: at the ambience level, and without ducking the music", Math.abs(shots[0].vol - 0.6) < 0.02 && (await musicEl(page)).vol > 0.5);
+  await deliver(page, { type: "stopSounds" });
+  await sleep(200);
+  ok("sounds: Stop sounds stops them", (await media(page, 'audio[data-role="shot"]')).length === 0);
+  ok("sounds: nothing throws", errors.length === 0);
+  await page.close();
+}
+
+// -------------------------------------------------------------
+// 4. The GM's bar conducts
+// -------------------------------------------------------------
+const LIB = {
+  v: 2,
+  lists: [
+    { id: "ex", name: "Explore", tracks: [{ k: "a", u: SUNO(U_SHORT), t: "Short" }, { k: "a", u: SUNO(U_LONG), t: "Long" }] },
+    { id: "cb", name: "Combat", tracks: [{ k: "yt", v: "_YsP_UGd8Ns", t: "Fight!" }] },
+    { id: "sc", name: "Cloud", tracks: [{ k: "sc", u: "https://soundcloud.com/gs/tavern", t: "Tavern" }, { k: "a", u: FILE("long-after"), t: "After" }] },
+  ],
+  sounds: [
+    { id: "s-sting", name: "Sting", track: { k: "a", u: FILE("clip-sting"), t: "Sting" }, vol: 1, page: "D&M" },
+    { id: "s-crit", name: "Crit", track: { k: "a", u: FILE("clip-crit"), t: "Crit" }, vol: 0.8, page: "D&M" },
+    { id: "s-gull", name: "Gull", track: { k: "a", u: FILE("clip-gull"), t: "Gull" }, vol: 1, page: "Coast" },
+    { id: "s-rainvid", name: "Rain video", track: { k: "yt", v: "bbbbbbbbbbb", t: "Rain" }, vol: 1, page: "Coast" },
+  ],
+  scenes: [
+    { id: "fight", name: "Fight", music: { mode: "list", list: "cb" }, amb: [] },
+    { id: "coast", name: "Coast", music: { mode: "keep" }, amb: [{ track: { k: "a", u: FILE("long-waves"), t: "Waves" }, vol: 0.5 }] },
+  ],
+  reactions: {
+    threatUp: { sound: "s-sting" },
+    combatStart: { scene: "fight" },
+    combatEnd: { restore: true },
+    rollCrit: { sound: "s-crit" },
+    rollComplication: { sound: "s-sting" },
+  },
+  fadeSeconds: 0.5,
+};
+const DNM = { threat: 0, momentum: 2, initiative: null, epochs: { breather: 0, break: 0, bed: 0, scene: 0, session: 0, adventure: 0 }, log: [] };
+
+{
+  const page = await browser.newPage();
   const errors = await open(page, {
-    role: "GM", conn: "conn-gm", players: [{ role: "PLAYER", connectionId: "conn-x" }], library,
-    meta: {
-      [STATE_KEY]: { v: 1, seq: 1, track: library.lists[0].tracks[0], at: Date.now(), paused: null, list: "ex", i: 0, label: "Explore" },
-      [DNM_ROOM_KEY]: dnm,
-    },
+    role: "GM", conn: "conn-gm", players: [{ role: "PLAYER", connectionId: "conn-x" }], library: LIB,
+    meta: { ...room({ seq: 1, track: LIB.lists[0].tracks[0], at: Date.now(), paused: null, list: "ex", i: 0, label: "Explore", vol: 1 }), [DNM_ROOM_KEY]: DNM },
   });
   ok("GM: nothing throws", errors.length === 0);
   if (errors.length) console.log("     ", errors[0]);
-  ok("GM: the transport is shown", await page.isVisible("#next"));
-  await page.click("#tune");
-  await page.waitForFunction((k) => window.__stub.st.meta[k].seq === 2, STATE_KEY, { timeout: 6000 }).catch(() => {});
+  ok("GM: the transport and the console window button are shown", (await page.isVisible("#next")) && (await page.isVisible("#popout")));
+  await tune(page);
+  await page.waitForFunction((k) => window.__stub.st.meta[k].music.seq === 2, STATE_KEY, { timeout: 6000 }).catch(() => {});
   let s = await roomState(page);
-  ok(`GM: when a track ends the next one starts (seq ${s.seq}, i ${s.i})`, s.seq === 2 && s.i === 1 && s.track.t === "Long");
+  ok(`GM: when a track ends the next starts (seq ${s.music.seq})`, s.music.seq === 2 && s.music.track.t === "Long");
   ok("GM: and the players are told the time", (await sent(page)).some((m) => m.data.type === "tick" && m.dest === "REMOTE"));
-  ok("GM: the pasted link never reaches the room", !("s" in s.track));
   await sleep(1500);
 
-  // Threat goes up at the D&M table
-  await page.evaluate(({ k, d }) => window.__stub.patchMeta({ [k]: { ...d, threat: 3 } }), { k: DNM_ROOM_KEY, d: dnm });
+  await patchMeta(page, { [DNM_ROOM_KEY]: { ...DNM, threat: 2 } });
   await sleep(400);
-  const cue = (await sent(page)).find((m) => m.data.type === "cue");
-  ok("GM: Threat going up sends its sound to everyone", !!cue && cue.dest === "ALL" && cue.data.track.u.includes("44444444"));
-  ok("GM: and the GM hears it too", (await audioState(page, "fx")).src.includes("44444444"));
+  let snd = (await sent(page)).filter((m) => m.data.type === "sound");
+  ok("GM: Threat going up plays its sound for everyone", snd.length === 1 && snd[0].dest === "ALL" && snd[0].data.track.u === FILE("clip-sting"));
+  ok("GM: the GM hears it too", (await media(page, 'audio[data-role="shot"]')).some((x) => x.src === FILE("clip-sting")));
 
-  // Initiative starts
-  const beforeFight = await audioState(page);
-  await page.evaluate(({ k, d }) => window.__stub.patchMeta({ [k]: { ...d, threat: 3, initiative: { round: 1, rows: [] } } }), { k: DNM_ROOM_KEY, d: dnm });
+  const beforeFight = await musicEl(page);
+  await patchMeta(page, { [DNM_ROOM_KEY]: { ...DNM, threat: 2, initiative: { round: 1, rows: [] } } });
   await page.waitForFunction(() => window.__yt && window.__yt.calls.length > 0, null, { timeout: 4000 }).catch(() => {});
   s = await roomState(page);
-  ok("GM: initiative switches to the combat playlist", s.list === "cb" && s.track.k === "yt");
-  const yt = await page.evaluate(() => window.__yt && window.__yt.calls);
-  ok("GM: the YouTube player is told to play that video", !!yt && yt.some((c) => c[0] === "loadVideoById" && c[1].videoId === "_YsP_UGd8Ns"));
-  ok("GM: the bar grows to show the video", (await page.evaluate(() => document.body.classList.contains("video")))
-    && (await page.evaluate(() => window.__stub.st.popover)).some((p) => p[0] === "height" && p[1] > 250));
-  ok("GM: the music under it stops", (await audioState(page)).paused);
-  await sleep(300);
-  s = await roomState(page);
-  ok("GM: the video's title is shared once it is known", s.nt === "Stub video 0");
-
-  // The fight's video ends: a one-track list loops rather than falling silent.
-  const seqBefore = s.seq;
-  await page.evaluate(() => window.__yt.fire(0));
-  await sleep(400);
-  s = await roomState(page);
-  ok("GM: a one-track combat list loops", s.seq === seqBefore + 1 && s.list === "cb");
-
-  // Initiative ends: back to the music it interrupted, where it left off.
-  await page.evaluate(({ k, d }) => window.__stub.patchMeta({ [k]: { ...d, threat: 3, initiative: null } }), { k: DNM_ROOM_KEY, d: dnm });
+  ok("GM: initiative recalls its scene", s.music.list === "cb" && s.music.track.k === "yt" && s.scene === "Fight");
+  ok("GM: YouTube is told to play the video", !!(await page.evaluate(() => window.__yt && window.__yt.calls.some((c) => c[0] === "loadVideoById" && c[1].videoId === "_YsP_UGd8Ns"))));
+  const pops = await page.evaluate(() => window.__stub.st.popover);
+  ok("GM: the bar grows to show the video", pops.some((p) => p[0] === "height" && p[1] >= 296));
+  ok("GM: what initiative interrupted is remembered", !!(await page.evaluate((k) => localStorage.getItem(k), RESUME_KEY)));
   await sleep(700);
+  ok("GM: the music underneath has faded away", (await media(page, 'audio[data-role="music"]')).length === 0);
   s = await roomState(page);
-  ok("GM: initiative ending brings the music back", s.list === "ex" && s.track.t === "Long");
-  const back = (Date.now() - s.at) / 1000;
-  ok(`GM: from where it left off (${back.toFixed(1)}s, was ${beforeFight.t.toFixed(1)}s)`, Math.abs(back - beforeFight.t) < 3);
-  await page.waitForFunction(() => !document.getElementById("music").paused, null, { timeout: 3000 }).catch(() => {});
-  ok("GM: and it is playing again", !(await audioState(page)).paused);
-  ok("GM: the video is put away", !(await page.evaluate(() => document.body.classList.contains("video"))));
+  ok("GM: the video's title is shared", s.music.nt === "Stub video _YsP_UGd8Ns");
 
-  // Pause and Next
-  await page.click("#toggle");
-  await sleep(300);
+  await patchMeta(page, { [DNM_ROOM_KEY]: { ...DNM, threat: 2, initiative: null } });
+  await sleep(800);
   s = await roomState(page);
-  ok("GM: pause writes a paused position", s.paused !== null);
-  await page.click("#next");
-  await sleep(300);
-  const s2 = await roomState(page);
-  ok("GM: next moves on", s2.seq === s.seq + 1 && s2.i === 0);
-  ok("GM: nothing threw along the way", errors.length === 0);
-  if (errors.length) console.log("     ", errors[0]);
-  await page.close();
-}
+  const pos = (Date.now() - s.music.at) / 1000;
+  ok("GM: initiative ending brings the music back", s.music.list === "ex" && s.music.track.t === "Long");
+  ok(`GM: where it left off (${pos.toFixed(1)}s, was ${beforeFight.t.toFixed(1)}s)`, Math.abs(pos - beforeFight.t) < 3);
+  await sleep(700);
+  ok("GM: the video is put away", (await page.evaluate(() => window.__yts.every((y) => y.destroyed))) && !(await page.evaluate(() => document.body.classList.contains("video"))));
 
-// -------------------------------------------------------------
-// 3. A YouTube playlist, for a player
-// -------------------------------------------------------------
-{
-  const page = await browser.newPage();
-  const errors = await open(page, { meta: { [STATE_KEY]: { v: 1, seq: 3, track: { k: "ytl", l: "PLRy5AGzKZLmE", t: "GS" }, sub: 1, at: Date.now() - 10000, paused: null } } });
-  await page.click("#tune");
-  await page.waitForFunction(() => window.__yt && window.__yt.calls.length > 0, null, { timeout: 4000 }).catch(() => {});
-  const calls = await page.evaluate(() => window.__yt && window.__yt.calls);
-  const load = calls && calls.find((c) => c[0] === "loadPlaylist");
-  ok("player: a YouTube playlist is loaded at the GM's video", !!load && load[1].list === "PLRy5AGzKZLmE" && load[1].index === 1);
-  ok(`player: at the GM's position (${load && load[1].startSeconds.toFixed(1)})`, !!load && load[1].startSeconds > 9 && load[1].startSeconds < 12);
-  // The player's YouTube runs on to the next video by itself; it is pulled back.
-  await page.evaluate(() => { window.__yt.idx = 2; window.__yt.fire(1); });
-  await sleep(200);
-  const back = await page.evaluate(() => window.__yt.calls.filter((c) => c[0] === "playVideoAt").map((c) => c[1]));
-  ok("player: a playlist that ran ahead is pulled back to the GM's video", back.includes(1));
-  ok("player: nothing throws", errors.length === 0);
-  await page.close();
-}
-{
-  // The GM's own playlist moves on by itself. The GM tells the room, and must not
-  // then restart the video it is already playing.
-  const page = await browser.newPage();
-  const errors = await open(page, { role: "GM", conn: "conn-gm", players: [],
-    meta: { [STATE_KEY]: { v: 1, seq: 3, track: { k: "ytl", l: "PLRy5AGzKZLmE", t: "GS" }, sub: 0, at: Date.now(), paused: null } } });
-  await page.click("#tune");
-  await page.waitForFunction(() => window.__yt && window.__yt.calls.length > 0, null, { timeout: 4000 }).catch(() => {});
-  await sleep(200);
-  await page.evaluate(() => { window.__yt.idx = 1; window.__yt.t = 0.5; window.__yt.fire(1); });
+  const log = [{ id: "r1", pass: false, diff: 2, comp: 2, conceal: "hidden", detail: [{ kind: "complication" }] }];
+  const before = (await sent(page)).filter((m) => m.data.type === "sound").length;
+  await patchMeta(page, { [DNM_ROOM_KEY]: { ...DNM, threat: 2, log } });
+  await sleep(1400);
+  ok("GM: a HIDDEN roll's complication plays nothing", (await sent(page)).filter((m) => m.data.type === "sound").length === before);
+  await patchMeta(page, { [DNM_ROOM_KEY]: { ...DNM, threat: 2, log: [{ id: "r2", pass: true, diff: 1, detail: [{ kind: "crit" }] }, ...log] } });
   await sleep(400);
-  const s = await roomState(page);
-  ok("GM: a YouTube playlist moving on is written to the room", s.sub === 1 && s.seq === 3);
-  const jumps = await page.evaluate(() => window.__yt.calls.filter((c) => c[0] === "playVideoAt").length);
-  ok("GM: and the video it moved to is not restarted", jumps === 0);
-  ok("GM: nothing throws", errors.length === 0);
+  snd = (await sent(page)).filter((m) => m.data.type === "sound");
+  ok("GM: an open roll's critical plays its sound", snd.length === before + 1 && snd.at(-1).data.track.u === FILE("clip-crit") && snd.at(-1).data.vol === 0.8);
+  ok("GM: nothing threw", errors.length === 0);
+  if (errors.length) console.log("     ", errors[0]);
   await page.close();
 }
 
 // -------------------------------------------------------------
-// 4. The panel
+// 5. Scattered layers, scenes following Owlbear scenes, the video limit
 // -------------------------------------------------------------
 {
-  const page = await browser.newPage({ viewport: { width: 380, height: 900 } });
-  const errors = await open(page, { file: "index.html", role: "GM", conn: "conn-gm", players: [] });
-  ok("panel GM: nothing throws", errors.length === 0);
+  const page = await browser.newPage();
+  const lib = { ...LIB, scenes: [...LIB.scenes, { id: "gulls", name: "Gulls", music: { mode: "keep" }, amb: [{ track: LIB.sounds[2].track, mode: "scatter", min: 3, max: 3, vol: 0.9, label: "Gull" }] }] };
+  const errors = await open(page, {
+    role: "GM", conn: "conn-gm", players: [], library: lib,
+    meta: room(null), sceneMeta: { [SCENE_KEY]: { scene: "coast" } }, sceneReady: false,
+  });
+  await page.evaluate(() => window.__stub.sceneReadyChange(true));
+  await sleep(500);
+  let s = await roomState(page);
+  ok("scenes: opening an Owlbear scene plays its radio scene", !!s && s.scene === "Coast" && s.amb.length === 1 && s.amb[0].label === "Waves");
+
+  await page.evaluate(() => window.__stub.st.sent.length = 0);
+  await page.evaluate((k) => window.__stub.patchMeta({ [k]: { ...window.__stub.st.meta[k], amb: [] } }), STATE_KEY);
+  // Recall the scattered scene through the same path the console uses.
+  await page.evaluate(() => document.querySelector("#next").click()); // harmless with no music
+  await page.evaluate(({ k }) => window.__stub.patchMeta({ [k]: { v: 2, music: null, amb: [
+    { id: "Lg", track: { k: "a", u: "https://files.test/clip-gull.mp3", t: "Gull" }, at: Date.now(), vol: 0.9, mode: "scatter", min: 3, max: 3, label: "Gull" }], scene: "Gulls" } }), { k: STATE_KEY });
+  await page.waitForFunction(() => window.__stub.st.sent.some((m) => m.data.type === "shot"), null, { timeout: 6000 }).catch(() => {});
+  const shot = (await sent(page)).find((m) => m.data.type === "shot");
+  ok("scatter: the GM's bar fires the gull for everyone, on its own", !!shot && shot.dest === "ALL" && shot.data.vol === 0.9);
+
+  // The video limit, as the conductor enforces it. Two videos already.
+  await page.evaluate(({ k }) => window.__stub.patchMeta({ [k]: { v: 2, music: { seq: 5, track: { k: "yt", v: "aaaaaaaaaaa", t: "A" }, at: Date.now(), paused: null, list: "", i: 0, vol: 1 },
+    amb: [{ id: "Lv", track: { k: "yt", v: "bbbbbbbbbbb", t: "B" }, at: Date.now(), vol: 1, mode: "loop", min: 20, max: 60, label: "B" }], scene: "" } }), { k: STATE_KEY });
+  await sleep(300);
+  await tune(page);
+  await page.waitForFunction(() => window.__yts && window.__yts.length === 2, null, { timeout: 4000 }).catch(() => {});
+  const pops = await page.evaluate(() => window.__stub.st.popover.filter((p) => p[0] === "width").map((p) => p[1]));
+  ok("videos: two video players sit side by side", pops.at(-1) === 400 && (await page.$$(".embed-tile")).length === 2);
+  ok("videos: nothing throws", errors.length === 0);
   if (errors.length) console.log("     ", errors[0]);
-  ok("panel GM: the GM section shows", await page.isVisible("#gm"));
-  await page.fill("#list-name", "Tavern");
-  await page.click("#list-new");
-  await page.fill("#list-text", [
-    "https://youtube.com/playlist?list=PLRy5AGzKZLmE&si=fF0O_ly7XYF6A4zu",
-    `Liquid Banjo | https://suno.com/song/${U_LONG}`,
+  await page.close();
+}
+
+// -------------------------------------------------------------
+// 6. SoundCloud, as music
+// -------------------------------------------------------------
+{
+  const page = await browser.newPage();
+  const errors = await open(page, {
+    role: "GM", conn: "conn-gm", players: [], library: LIB,
+    meta: room({ seq: 3, track: LIB.lists[2].tracks[0], at: Date.now() - 12000, paused: null, list: "sc", i: 0, label: "Cloud", vol: 1 }),
+  });
+  await tune(page);
+  await page.waitForFunction(() => window.__sc && window.__sc.calls.some((c) => c[0] === "play"), null, { timeout: 4000 }).catch(() => {});
+  const frame = await page.getAttribute(".embed-tile iframe", "src").catch(() => "");
+  ok("SoundCloud: its widget is shown, pointed at the track", /^https:\/\/w\.soundcloud\.com\/player\/\?url=https%3A%2F%2Fsoundcloud\.com%2Fgs%2Ftavern/.test(frame || ""));
+  const calls = await page.evaluate(() => window.__sc ? window.__sc.calls : []);
+  const seek = calls.find((c) => c[0] === "seekTo");
+  ok(`SoundCloud: it starts where the room is (${seek && seek[1]}ms)`, !!seek && seek[1] > 11000 && seek[1] < 14000);
+  ok("SoundCloud: and plays", calls.some((c) => c[0] === "play"));
+  await page.evaluate(() => window.__sc.fire("finish"));
+  await sleep(500);
+  const s = await roomState(page);
+  ok("SoundCloud: when it finishes, the playlist moves on", s.music.seq === 4 && s.music.track.t === "After");
+  ok("SoundCloud: nothing throws", errors.length === 0);
+  if (errors.length) console.log("     ", errors[0]);
+  await page.close();
+}
+
+// -------------------------------------------------------------
+// 7. The console inside Owlbear, talking to the GM's bar
+// -------------------------------------------------------------
+{
+  const ctx = await browser.newContext({ viewport: { width: 520, height: 900 } });
+  const bar = await ctx.newPage();
+  const barErrors = await open(bar, { role: "GM", conn: "conn-gm", players: [], library: { v: 2, lists: [], sounds: [], scenes: [] }, meta: room(null) });
+  const con = await ctx.newPage();
+  const errors = await open(con, { file: "index.html", role: "GM", conn: "conn-gm", players: [] });
+  await con.waitForFunction(() => document.getElementById("c-conn").textContent.includes("GM"), null, { timeout: 5000 }).catch(() => {});
+  ok("console: it finds the bar", (await con.textContent("#c-conn")) === "Connected · GM");
+  ok("console: nothing throws", errors.length === 0 && barErrors.length === 0);
+  if (errors.length || barErrors.length) console.log("     ", errors[0] || barErrors[0]);
+  ok("console: it asks Owlbear for room to breathe", (await con.evaluate(() => window.__stub.st.action)).some((a) => a[0] === "width" && a[1] >= 500));
+
+  // A playlist, mixed, with one line that cannot work.
+  await con.click('button[data-tab="library"]');
+  await con.click("#c-lists button:has-text('New')");
+  await sleep(300);
+  await con.fill("#c-lists textarea", [
+    "Banjo | https://suno.com/song/" + U_LONG,
+    "https://youtu.be/_YsP_UGd8Ns",
+    "https://soundcloud.com/gs/tavern",
     "https://suno.com/s/cq8ogDYThAoJj3fo",
   ].join("\n"));
-  await page.click("#list-save");
-  const errs = await page.$$eval("#list-errors .error", (n) => n.map((x) => x.textContent));
-  ok("panel GM: the Suno short link is reported on its line", errs.length === 1 && /^Line 3/.test(errs[0]));
-  ok("panel GM: the bad line stays in the box to be fixed", (await page.inputValue("#list-text")).includes("suno.com/s/"));
-  const lib = await page.evaluate((k) => JSON.parse(localStorage.getItem(k)), LIBRARY_KEY);
-  ok("panel GM: the good lines are saved, sources mixed", lib.lists[0].tracks.map((t) => t.k).join() === "ytl,a");
-  await page.click("#list-play");
+  await con.click("#c-lists button:has-text('Save')");
+  await sleep(500);
+  const errs = await con.$$eval("#c-lists .error", (n) => n.map((x) => x.textContent));
+  ok("console: the Suno short link is reported on its line", errs.length === 1 && /^Line 4/.test(errs[0]));
+  const stored = await bar.evaluate((k) => JSON.parse(localStorage.getItem(k)), LIBRARY_KEY);
+  ok("console: the library is kept by the BAR, sources mixed", stored.lists[0].tracks.map((t) => t.k).join() === "a,yt,sc");
+  ok("console: the broken line stays in the box to be fixed", (await con.inputValue("#c-lists textarea")).includes("suno.com/s/"));
+
+  await con.fill("#c-sounds textarea", ["## Combat", "Clash | https://files.test/clip-clash.mp3", "Horn | https://files.test/clip-horn.mp3 | 50", "## Coast", "Waves | https://files.test/long-waves.mp3"].join("\n"));
+  await con.click("#c-sounds button:has-text('Save sounds')");
+  await sleep(400);
+  ok("console: sounds saved with their pages", (await bar.evaluate((k) => JSON.parse(localStorage.getItem(k)).sounds.map((s) => s.page).join(), LIBRARY_KEY)) === "Combat,Combat,Coast");
+
+  await con.click('button[data-tab="play"]');
   await sleep(300);
-  const s = await roomState(page);
-  ok("panel GM: Play writes the first track to the room", s && s.track.k === "ytl" && s.label === "Tavern");
-  ok("panel GM: the now-playing line follows", (await page.textContent("#now-title")).includes("YouTube playlist"));
+  await con.click("#c-music button:has-text('Play this list')");
+  await sleep(500);
+  let s = await roomState(bar);
+  ok("console: Play writes the playlist to the room", !!s && s.music && s.music.track.t === "Banjo");
+  ok("console: and shows it", (await con.textContent("#c-now-title")) === "Banjo");
 
-  await page.fill("#cue-threatUp", "https://youtu.be/_YsP_UGd8Ns");
-  await page.fill("#cue-bed", `https://suno.com/song/${U_LONG}`);
-  await page.selectOption("#combat-list", lib.lists[0].id);
-  await page.click("#cues-save");
-  const lib2 = await page.evaluate((k) => JSON.parse(localStorage.getItem(k)), LIBRARY_KEY);
-  ok("panel GM: a YouTube sound is refused", !lib2.cues.threatUp && /threatUp/.test(await page.textContent("#cues-msg")));
-  ok("panel GM: a Suno sound is kept", lib2.cues.bed && lib2.cues.bed.u === SUNO(U_LONG));
-  ok("panel GM: the combat playlist is kept", lib2.combatList === lib.lists[0].id);
+  const pads = await con.$$eval("#c-board .pad", (n) => n.map((x) => x.textContent));
+  ok("console: the soundboard shows the first page", pads.join() === "Clash,Horn");
+  await con.click("#c-board .pad:has-text('Horn')");
+  await sleep(300);
+  const horn = (await sent(bar)).filter((m) => m.data.type === "sound").at(-1);
+  ok("console: a pad press goes to everyone, at the sound's own level", !!horn && horn.dest === "ALL" && horn.data.vol === 0.5);
+  await con.click("#c-board .page:has-text('Coast')");
+  ok("console: pages switch", (await con.$$eval("#c-board .pad", (n) => n.map((x) => x.textContent))).join() === "Waves");
 
-  await page.click("#open-bar");
-  const pop = (await page.evaluate(() => window.__stub.st.popover)).find((p) => p[0] === "open");
-  ok("panel: Open the radio docks the bar", !!pop && pop[1].url.endsWith("/bar.html") && pop[1].disableClickAway === true);
+  await con.selectOption("#c-amb select >> nth=0", { label: "Waves" });
+  await con.click("#c-amb button:has-text('Add')");
+  await sleep(400);
+  s = await roomState(bar);
+  ok("console: an ambience layer is added from the library", s.amb.length === 1 && s.amb[0].label === "Waves" && s.amb[0].mode === "loop");
 
-  await page.click("#list-delete");
-  ok("panel GM: delete asks for a second press", (await page.textContent("#list-delete")) === "Sure?");
-  await page.click("#list-delete");
-  const lib3 = await page.evaluate((k) => JSON.parse(localStorage.getItem(k)), LIBRARY_KEY);
-  ok("panel GM: and then deletes", lib3.lists.length === 0);
+  await con.fill("#c-scenes input[type=text]", "Harbour");
+  await con.click("#c-scenes button:has-text('Save as scene')");
+  await sleep(400);
+  const scenes = await bar.evaluate((k) => JSON.parse(localStorage.getItem(k)).scenes, LIBRARY_KEY);
+  ok("console: what is playing is saved as a scene", scenes.length === 1 && scenes[0].name === "Harbour" && scenes[0].amb.length === 1 && scenes[0].music.mode === "list");
+  await con.click("#c-amb button[aria-label='Stop Waves']");
+  await sleep(300);
+  ok("console: a layer stops", (await roomState(bar)).amb.length === 0);
+  await con.click("#c-scenes button.scene:has-text('Harbour')");
+  await sleep(400);
+  s = await roomState(bar);
+  ok("console: recalling the scene brings it all back", s.amb.length === 1 && s.scene === "Harbour");
+
+  await con.click('button[data-tab="reactions"]');
+  await sleep(300);
+  await con.selectOption("#c-react select[aria-label='Threat goes up: sound']", { label: "Combat: Clash" });
+  await con.click("#c-react button:has-text('Save reactions')");
+  await sleep(400);
+  const lib = await bar.evaluate((k) => JSON.parse(localStorage.getItem(k)), LIBRARY_KEY);
+  ok("console: a reaction is saved", !!lib.reactions.threatUp && lib.reactions.threatUp.sound === lib.sounds[0].id);
+  ok("console: without D&M it says the reactions wait for it", /not in this room/.test(await con.textContent("#c-react")));
+  await con.selectOption("#c-obrscene select", { label: "Harbour" });
+  await con.click("#c-obrscene button:has-text('Set for this Owlbear scene')");
+  await sleep(400);
+  ok("console: an Owlbear scene can be given a radio scene", (await bar.evaluate((k) => window.__stub.st.sceneMeta[k], SCENE_KEY)).scene === lib.scenes[0].id);
+
+  // XSS: a library pasted from somebody else's backup.
+  await con.click('button[data-tab="settings"]');
+  await sleep(200);
+  const evil = { v: 2, lists: [{ id: "x", name: '<img src=x onerror="window.__pwned=1">', tracks: [{ k: "a", u: "https://files.test/a.mp3", t: '<img src=x onerror="window.__pwned=1">' }] }],
+    sounds: [{ id: "e", name: '<img src=x onerror="window.__pwned=1">', track: { k: "a", u: "https://files.test/a.mp3", t: "x" }, page: '<b onmouseover="window.__pwned=1">p</b>' }], scenes: [] };
+  await con.fill("#c-backup textarea", JSON.stringify(evil));
+  await con.click("#c-backup button:has-text('Load this library')");
+  await con.click("#c-backup button:has-text('Sure?')");
+  await sleep(400);
+  for (const t of ["play", "library", "reactions"]) { await con.click(`button[data-tab="${t}"]`); await sleep(150); }
+  ok("console: a hostile backup's names are shown as text, never run", !(await con.evaluate(() => window.__pwned)) && (await con.$$("#c-main img")).length === 0);
+  ok("console: no section renders a list as text", !(await con.evaluate(() => document.body.textContent.includes("[object"))));
+  ok("console: nothing threw", errors.length === 0 && barErrors.length === 0);
+  if (errors.length || barErrors.length) console.log("     ", errors[0] || barErrors[0]);
+
+  // A player's console: now playing and their own volume, nothing else.
+  const pbar = await ctx.newPage();
+  await open(pbar, { role: "PLAYER", conn: "conn-p", meta: room({ seq: 1, track: { k: "a", u: FILE("long-x"), t: "Song" }, at: Date.now(), paused: null, vol: 1 }) });
+  await ctx.close();
+
+  const ctx2 = await browser.newContext();
+  const pb = await ctx2.newPage();
+  await open(pb, { role: "PLAYER", conn: "conn-p", meta: room({ seq: 1, track: { k: "a", u: FILE("long-x"), t: "Song" }, at: Date.now(), paused: null, vol: 1 }) });
+  const pc = await ctx2.newPage();
+  const perr = await open(pc, { file: "index.html", role: "PLAYER", conn: "conn-p" });
+  await pc.waitForFunction(() => document.getElementById("c-conn").textContent.startsWith("Connected"), null, { timeout: 5000 }).catch(() => {});
+  ok("player console: shows what is playing", (await pc.textContent("#c-now-title")) === "Song");
+  ok("player console: no tabs, no mixer, no soundboard", !(await pc.isVisible("#c-tabs")) && !(await pc.isVisible("#c-board")) && !(await pc.isVisible("#c-music")));
+  await pc.fill("#c-v-amb", "20");
+  await pc.dispatchEvent("#c-v-amb", "input");
+  await sleep(300);
+  ok("player console: their own volume reaches their bar", Math.abs((await pb.evaluate((k) => JSON.parse(localStorage.getItem(k)).amb, PREFS_KEY)) - 0.2) < 0.01);
+  ok("player console: nothing throws", perr.length === 0);
+  await ctx2.close();
+}
+
+// -------------------------------------------------------------
+// 8. The console in its own window
+// -------------------------------------------------------------
+{
+  const ctx = await browser.newContext();
+  const bar = await ctx.newPage();
+  const barErrors = await open(bar, { role: "GM", conn: "conn-gm", players: [], library: LIB, meta: room(null) });
+  const popupP = ctx.waitForEvent("page");
+  await bar.click("#popout");
+  const pop = await popupP;
+  const popErrors = [];
+  pop.on("pageerror", (e) => popErrors.push(e.message));
+  await pop.waitForLoadState();
+  await pop.waitForFunction(() => document.getElementById("c-conn").textContent.includes("GM"), null, { timeout: 6000 }).catch(() => {});
+  ok("window: the popped-out console connects to the bar that opened it", (await pop.textContent("#c-conn")) === "Connected · GM");
+  ok("window: it is the wide layout", await pop.evaluate(() => document.body.classList.contains("popout")));
+  ok("window: it shows the bar's library", (await pop.$$eval("#c-music select option", (n) => n.map((x) => x.textContent))).includes("Explore (2)"));
+  await pop.click("#c-music button:has-text('Play this list')");
+  await sleep(500);
+  const s = await roomState(bar);
+  ok("window: its commands change the room, through the bar", !!s && s.music && s.music.label === "Explore");
+  await pop.click("#c-board .pad:has-text('Sting')");
+  await sleep(300);
+  ok("window: its soundboard plays for everyone", (await sent(bar)).some((m) => m.data.type === "sound" && m.data.track.u === FILE("clip-sting")));
+  ok("window: nothing throws", popErrors.length === 0 && barErrors.length === 0);
+  if (popErrors.length || barErrors.length) console.log("     ", popErrors[0] || barErrors[0]);
+  await ctx.close();
+}
+{
+  // A blocked pop-up is said, not silent.
+  const page = await browser.newPage();
+  await open(page, { role: "GM", conn: "conn-gm", players: [], meta: room(null) });
+  await page.evaluate(() => { window.open = () => null; });
+  await page.click("#popout");
+  ok("window: a blocked pop-up says how to allow it", /Allow pop-ups/.test(await page.textContent("#status")));
   await page.close();
 }
 {
+  // The console with no bar open offers to open it.
   const page = await browser.newPage();
-  const errors = await open(page, { file: "index.html", role: "PLAYER", players: [{ role: "PLAYER", connectionId: "conn-x" }] });
-  ok("panel player: nothing throws", errors.length === 0);
-  ok("panel player: no GM section", !(await page.isVisible("#gm")));
-  ok("panel player: warned when there is no GM", await page.isVisible("#no-gm"));
+  const errors = await open(page, { file: "index.html", role: "PLAYER" });
+  await sleep(1500);
+  ok("no bar: the console says the bar is not open", await page.isVisible("#c-nobar") && /not open/.test(await page.textContent("#c-nobar")));
+  await page.click("#c-open-bar");
+  const opened = (await page.evaluate(() => window.__stub.st.popover)).find((p) => p[0] === "open");
+  ok("no bar: Open the radio docks the bar", !!opened && opened[1].url.endsWith("/bar.html") && opened[1].disableClickAway === true);
+  ok("no bar: nothing throws", errors.length === 0);
   await page.close();
 }
 
 // -------------------------------------------------------------
-// 5. The "Copy for Radio" bookmark, run against a page shaped like a Suno playlist
+// 9. The "Copy for Radio" bookmark, run against a page shaped like a Suno playlist
 // -------------------------------------------------------------
 {
   const A = "aaaaaaaa-1111-4111-8111-111111111111";
@@ -546,12 +770,14 @@ const sent = (page) => page.evaluate(() => window.__stub.st.sent);
   await page.close();
 }
 
+
 await browser.close();
 await site.close();
 console.log(`ui: ${pass} passed, ${fail} failed`);
 console.log(`  Not covered here — check live in a room:
   · that Owlbear lets the bar play sound after one press, and keeps it playing
-  · that Suno serves cdn1.suno.ai/<id>.mp3 to a page on another site
-  · that YouTube's real player starts from our press, or needs its own
-  · that the D&M extension's room record looks the way diffDnm() reads it`);
+  · that the popped-out console connects (Owlbear's own headers decide it)
+  · that Suno, YouTube and SoundCloud behave the way their stubs here do
+  · that Owlbear fires onReadyChange on a GM's scene switch
+  · that the D&M extension's record looks the way reactions.js reads it`);
 process.exit(fail ? 1 : 0);

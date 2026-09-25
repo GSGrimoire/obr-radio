@@ -13,22 +13,21 @@
     <div id="label" class="now-label"></div>
   </div>
   <div class="gm-only transport">
-    <button id="prev" title="Previous">⏮</button>
-    <button id="toggle" title="Play / pause">▶</button>
-    <button id="next" title="Next">⏭</button>
+    <button id="prev" title="Previous track" aria-label="Previous track">⏮</button>
+    <button id="toggle" title="Play or pause the music" aria-label="Play or pause">▶</button>
+    <button id="next" title="Next track" aria-label="Next track">⏭</button>
   </div>
-  <button id="move" class="ghost" title="Move to the next corner">⇲</button>
-  <button id="close" class="ghost" title="Close the radio (the music stops for you)">×</button>
+  <button id="mute" class="ghost" title="Mute the radio, for you only" aria-label="Mute" aria-pressed="false">🔊</button>
+  <button id="popout" class="ghost gm-only-inline" title="Open the radio console in its own window" aria-label="Open console window">⧉</button>
+  <button id="move" class="ghost" title="Move to the next corner" aria-label="Move">⇲</button>
+  <button id="close" class="ghost" title="Close the radio (the sound stops for you)" aria-label="Close">×</button>
 </div>
 <div class="bar-row small">
   <button id="tune" class="tune" title="Your browser needs one press before it will play sound">▶ Tune in</button>
-  <label class="vol" title="Music volume, for you only">♪ <input type="range" id="vol-music" min="0" max="100"></label>
-  <label class="vol" title="Sound-effect volume, for you only">✦ <input type="range" id="vol-fx" min="0" max="100"></label>
   <span id="status" class="status" role="status"></span>
 </div>
-<div id="yt-wrap" class="yt-wrap"><div id="yt"></div></div>
-<audio id="music" preload="auto"></audio>
-<audio id="fx" preload="auto"></audio>
+<div id="embeds" class="embeds"></div>
+<div id="media" hidden></div>
 <script type="module" src="bar.js"></script>
 </body>
 </html>

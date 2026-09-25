@@ -1,5 +1,34 @@
 # Roadmap: from "a radio" to a table sound system
 
+## Where it stands (1.0)
+
+Phases 1–4 below shipped together as **1.0**, because each was small once the
+multi-channel core existed, and a playtest of the core alone would have told us
+little. What 1.0 is, and what only a real room can confirm, is in README.md.
+
+One change from the plan, asked for during the build: **the console can live in its
+own window** (⧉ on the bar), for the soundboard on a second screen. It is a remote
+control for the bar inside Owlbear — see "Decisions" in README.md for why that is
+the only arrangement that can work, and why the library had to move into the bar.
+
+**Phase 0 could not be done from the build machine** (it cannot reach Owlbear,
+YouTube, Suno or SoundCloud). Its three questions became playtest checks instead:
+scene switching, the SoundCloud widget in a docked panel, and — added — whether
+Owlbear lets a popped-out window talk back. The budget arithmetic *was* done:
+`tests/radio.test.mjs` checks four layers of real links with long titles fit in
+3.5 kB, and that an extreme one is refused rather than written.
+
+The open questions were settled by default, and are easy to revisit:
+- soundboard pages are unlimited, 120 sounds in all;
+- the name stays GS Grimoire Radio.
+
+**Next: the playtest.** Then Phase 5, in whatever order the playtest suggests.
+
+---
+
+The original plan follows, unchanged, so the record of what was intended stays next
+to what was done.
+
 Written before coding starts, so it can be argued with before it's built. Each phase
 ships as a real, tested, playable release — not a branch that sits unfinished for
 three phases. Version numbers follow the project's own rule (see CLAUDE.md): a

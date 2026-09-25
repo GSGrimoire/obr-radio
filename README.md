@@ -1,114 +1,129 @@
 # GS Grimoire Radio
 
-An Owlbear Rodeo extension that plays music to the whole table. It streams
-straight from YouTube and Suno links, and nothing is downloaded or re-hosted.
-It can also react to the Dreams & Machines extension: its own playlist for
-initiative, and a sound for Threat, Momentum, rests and scene changes.
+An Owlbear Rodeo extension for the whole table's sound: music, ambience layers under
+it, and a soundboard over it. Everything streams from where it already lives —
+YouTube, Suno, SoundCloud, Dropbox, any audio link — mixed freely in one playlist.
+Nothing is downloaded or re-hosted, and players need no accounts.
 
-Version **0.2**. Not yet tried in a real room; see *Live checks* below.
+If the Dreams & Machines extension is in the room, the radio can react to the table:
+a scene for initiative (and the music it interrupted, back afterwards), a sting when
+Threat rises, a sound for a critical or a complication. Without D&M it is a complete
+radio on its own.
+
+Version **1.0**. Not yet tried in a real room; see *Live checks* below.
+
+**Install:** in Owlbear, add `https://gsgrimoire.github.io/obr-radio/manifest.json`.
 
 ## Using it
 
 **Everyone:** open *Radio* in the toolbar and press **Open the radio**. A small bar
-docks in a corner of the map. Press **▶ Tune in** once; browsers will not play
-sound in a page nobody has clicked. Each player sets their own music and sound
-volumes on the bar. ⇲ moves it to the next corner (and asks for Tune in again,
-because the moved bar is a new page).
+docks in a corner of the map. Press **▶ Tune in** once: browsers will not play sound
+in a page nobody has clicked. Your own volumes for music, ambience and sounds are in
+the Radio panel; 🔊 on the bar mutes the radio for you. ⇲ moves the bar to the next
+corner (and asks for Tune in again, because the moved bar is a new page).
 
-**GM:** keep your own bar open. It is what moves the table to the next track.
+**GM:** keep your own bar open. It is what plays the music, moves it on, fires the
+soundboard and reacts to the table. The **Radio panel** is its console:
 
-- **Playlists.** One link per line, `Title | link` to name it. Mix freely:
-  - YouTube videos, `youtu.be/…` or `youtube.com/watch?v=…`
-  - whole YouTube playlists, `youtube.com/playlist?list=…`
-  - Suno songs, `suno.com/song/<id>`
-  - any `https://` link to an .mp3/.ogg/.wav/.m4a file
-- **Soundscape.** Pick a playlist for initiative. When initiative ends, the music
-  it interrupted comes back where it left off. Give any of the thirteen D&M
-  events a sound (Suno or audio-file links). Sounds play for a few seconds,
-  fade out, and duck the music under them.
-- **Backup.** Playlists live in your browser. Copy the library text somewhere
-  safe to move it to another browser.
+- **Play** — the music (playlist, transport, level), up to four **ambience layers**
+  under it (each looped, or "now and then" at random intervals, each with its own
+  level), your **scenes** (one press recalls a playlist and its ambience together),
+  and the **soundboard**.
+- **Library** — playlists and sounds, as text: one link per line, `Title | link`.
+  Sounds are grouped into soundboard pages with `## Page` lines, and can carry their
+  own level: `Horn | link | 60`.
+- **Reactions** — what happens at a D&M table, and what the radio does about it: a
+  sound, a scene, or (when initiative ends) going back to what was playing. Also:
+  give an Owlbear scene a radio scene, and it plays when you switch to it.
+- **Settings** — shuffle, fade length, and a text backup of the whole library.
 
-### Suno links
+**⧉ on the bar** opens the same console in its own window, for a second screen. It
+is a remote control for the bar inside Owlbear: close it any time and the sound
+carries on.
 
-Any of these works in a playlist:
+### What can go in a playlist
 
-- **a whole Suno playlist at once:** add the **Copy for Radio** bookmark from
-  [the Suno helper page](https://gsgrimoire.github.io/obr-radio/suno.html) (it is
-  linked from the panel). On a Suno playlist page, press it and paste what it copies.
-- a song's address, `https://suno.com/song/<id>`
-- a song's embed code (Share → Embed), pasted whole
-- any text with song links in it; every link on a line is taken
+| Source | Paste | Notes |
+|---|---|---|
+| YouTube | a video, a playlist, or an embed code | a 200px video tile shows while it plays |
+| Suno | `suno.com/song/<id>`, or its embed code | a whole Suno playlist: the [Copy for Radio bookmark](https://gsgrimoire.github.io/obr-radio/suno.html) |
+| SoundCloud | `soundcloud.com/artist/track`, or its embed code | one track per line; its widget shows while it plays |
+| Dropbox | the share link as Dropbox gives it | turned into the file itself |
+| Anything else | a link ending in .mp3 .ogg .wav .m4a .opus .flac .webm | add `#audio` to the end of an audio link with no extension |
 
-Why the bookmark rather than just pasting the playlist link: Suno will not answer
-a page on another site, so the radio cannot read a playlist, or follow a short
-`suno.com/s/…` share link. A bookmark runs as a suno.com page and can read what is
-on the screen. It reads the page and writes to your clipboard, nothing else. Suno
-only puts songs on the page as you scroll, so scroll to the end first.
+Not possible, and the radio says why when you try: Suno short links (`suno.com/s/…`)
+and SoundCloud short links (open them, paste where they land); Suno and SoundCloud
+playlists (paste the tracks, or use the bookmark for Suno); Google Drive (it no
+longer lets its files play on other sites).
 
-Songs must be public for the table to hear them.
-
-### YouTube
-
-YouTube's rules do not allow a hidden or tiny player, so while a YouTube track
-plays the bar grows to show a 320×200 video. Players without YouTube Premium may
-get adverts, and each player's adverts are their own; the bar pulls them back in
-line when the advert ends.
+Soundboard pads and "now and then" sounds must be audio files or Suno songs: a video
+cannot fire as a one-shot. Videos can be music, or a looped ambience layer. At most
+two YouTube or SoundCloud players show at once, side by side.
 
 ## How it works
 
-Nobody streams to anybody. Every client plays its own copy of the same link and
-seeks to where the room says it should be. The room holds one small record under
-`com.gsgrimoire.obr-radio/state`: which track, when it started in the GM's
-clock, whether it is paused. Players' clocks are corrected by a tick the GM's bar
-broadcasts every ten seconds. Two seconds of drift is tolerated before anyone is
-moved, or ordinary buffering would make everyone stutter.
+Nobody streams to anybody. Every client plays its own copy of each source and seeks
+to where the room says it should be. The room holds one small record (under
+`com.gsgrimoire.obr-radio/state`): the music, up to four ambience layers, and when
+each started in the GM's clock. Players' clocks are corrected by a tick the GM's bar
+broadcasts; two seconds of drift is tolerated before anyone is moved, or ordinary
+buffering would make everyone stutter. Soundboard presses and "now and then" sounds
+are one-shot broadcasts from the GM's bar: nothing to sync, nothing to catch up on.
 
 | File | What it is |
 |---|---|
-| `radio.js` | every rule: link parsing, the room record, timing, playlists, the D&M cues. Pure, no SDK |
-| `bar.js` / `bar.html` | the docked player. Every client runs one; the GM's also conducts |
-| `panel.js` / `index.html` | the toolbar panel: open the bar, and the GM's playlists and soundscape |
+| `sources.js` | what a pasted link is, and whether it can be played. Pure |
+| `library.js` | the GM's playlists, sounds, scenes and reactions; upgrades a 0.2 library. Pure |
+| `state.js` | the room's record and every change to it, each refused before it is written if it breaks a rule. Pure |
+| `reactions.js` | what changed at a D&M table, and what the library says to do. Pure |
+| `link.js` | the console ↔ bar protocol. Pure |
+| `players.js` | one interface over `<audio>`, YouTube's player and SoundCloud's widget |
+| `bar.js` / `bar.html` | the docked bar: plays for everyone; the GM's also conducts |
+| `console.js` / `index.html` | the console, inside Owlbear or in its own window |
 | `suno-collect.js` / `suno.html` | the Copy for Radio bookmark, and the page you install it from |
-| `sdk.js` | the Owlbear SDK, vendored (same bundle as `dnm-obr`) |
+| `sdk.js` | the Owlbear SDK, vendored (the same bundle as `dnm-obr`) |
 
 ### Decisions, and why
 
-- **Playlists are in the GM's localStorage, not the room.** Room metadata is 16 kB
-  shared with every extension; D&M alone reserves 11 kB. The room only holds the
-  track that is playing, without the pasted link.
-- **The soundscape watches the D&M room record, not D&M's broadcasts.** Any player
-  can send a broadcast. The room record (`com.thuknights.dnm-rolls/state`) is
-  written only by the GM's D&M background page, after it has checked the sender.
-  `diffDnm()` compares two readings. It reads `threat`, `momentum`,
-  `initiative.round` and the six `epochs` counters, and nothing else. **If
-  dnm-obr changes the shape of those, the soundscape goes quiet.** The first
-  reading is a baseline, never news.
-- **Only the GM's bar may set the clock or fire a sound.** The broadcast channel
-  is open to the room, so the bar checks the sender's connection id against the
-  room's GMs. The room record itself cannot be checked that way: any client can
-  write metadata. What that allows is a player with devtools changing the music.
-  Every URL is clamped to https on the way out of storage, so it cannot run
-  script.
-- **Stingers are audio files only.** A YouTube stinger would need a second visible
-  player and would often open with an advert.
-- **Only the most significant cue sounds** when several land at once (End Scene
-  also ends initiative), and no more than one every 1.2 seconds.
+- **The bar is the only writer, and keeps the library.** Room metadata is 16 kB
+  shared with every extension (D&M alone reserves 11 kB), so libraries cannot live
+  there; they live in the GM's bar's storage. The console asks the bar for
+  everything. That is also what lets the popped-out window work: a window outside
+  Owlbear has *different storage* from the frames inside it (Chrome partitions
+  storage by top-level site), so it could never share a library directly.
+- **The popped-out console talks to the bar that opened it, by postMessage.** Not a
+  BroadcastChannel and not storage: those cannot cross the partition, which is why
+  D&M's v1.29 popped-out sheet never connected. A direct window-to-opener message is
+  not storage and does cross. That is why ⧉ is on the *bar*: a window opened by the
+  toolbar panel would lose its link when the panel closed. Inside Owlbear, the panel
+  and the bar share a partition, so they use a BroadcastChannel.
+- **The room's share is budgeted.** Every change is checked against 3.5 kB before it
+  is written; with real links, four layers and long titles fit with room to spare.
+  A change that would not fit is refused with a reason.
+- **Videos are visible, and limited to two.** YouTube's policies do not allow a
+  hidden or tiny player; SoundCloud's widget is treated the same way.
+- **Reactions read the D&M room record, not D&M's broadcasts.** Any player can send a
+  broadcast; the record is written only by the GM's D&M page after it has checked
+  the sender. Fields read: `threat`, `momentum`, `initiative.round`, the six `epochs`
+  counters, and the roll log's `id`, `kind`, `pass`, `diff`, `comp`,
+  `detail[].kind`, `conceal`, `hidden`. **If dnm-obr reshapes those, reactions go
+  quiet.** The first reading is a baseline, never news.
+- **Hidden rolls never react.** A complication sting on everyone's speakers would
+  announce the result of a roll its roller concealed.
+- **Only the GM's connection may tick, fire a sound or fire a shot.** The broadcast
+  channel is open to the room; the bar checks the sender. Room metadata itself
+  cannot be checked that way (any client can write it) — what that allows is a
+  player with devtools changing the music, and every URL is clamped to https on
+  the way out, so it cannot run script.
+- **The console never puts library text into the page as HTML.** A backup may be
+  anybody's; names go in as text. Tested with a hostile backup.
+- **A layer in two scenes keeps playing** when you move between them: walking from
+  the tavern to its back room does not restart the rain.
 - **Advancing is guarded by `seq`.** A track ending advances only from the seq that
   ended, so two GM windows cannot skip two tracks for one ending.
-- **The Suno file address is one function**, `sunoAudioUrl()`. Suno has no public
-  API; `cdn1.suno.ai/<id>.mp3` is simply where its songs are. If Suno moves them,
-  that is the line to change.
-- **A pasted line with HTML or more than one link is read for every link in it.**
-  That is what makes a whole embed code work; an iframe names the same song twice
-  (`src` and the fallback `href`), so repeats within a line collapse to one.
-- **The bookmark is built from the tested function.** `suno.html` turns
-  `collectSunoSongs()` into the bookmark with `toString()`, so the button cannot
-  drift from what `ui.test.mjs` ran. Keep that function self-contained.
-- **A correction is re-checked the moment a seek lands** (`seeked`, `canplay`). A
-  clock tick arriving while a player's first seek was still in flight used to be
-  skipped and wait four seconds for the next check. The suite caught it failing
-  one run in six; logging showed `readyState 1, seeking true` at the tick.
+- **Suno's file address is one function**, `sunoAudioUrl()`. Suno has no public API;
+  `cdn1.suno.ai/<id>.mp3` is simply where its songs are. If it moves, that line
+  changes.
 - **No `prompt()` or `confirm()`.** Owlbear frames extensions and a sandboxed frame
   may refuse modals. Deleting asks for a second press instead.
 
@@ -116,36 +131,45 @@ moved, or ordinary buffering would make everyone stutter.
 
 ```sh
 npm install playwright --no-save
-node tests/radio.test.mjs     # the rules, 84 checks, no browser
-node tests/ui.test.mjs        # the bar, panel and bookmark in Chromium, 74 checks
+node tests/radio.test.mjs     # every rule, no browser (157 checks)
+node tests/ui.test.mjs        # the bar, console, pop-out and bookmark in Chromium (104 checks)
 ```
 
 `ui.test.mjs` swaps the SDK for a stub in a staged copy under `out/`, and answers
-Suno's CDN and YouTube's iframe API by request interception: generated WAV files,
-served with byte ranges as a real CDN does (without ranges, a far seek quietly
-lands at the start), and a fake `YT.Player`. Removing the GM check from the bar
-fails four checks; a crash in `bar.js` fails the suite in seconds.
+Suno's CDN, YouTube's iframe API and SoundCloud's widget API by request
+interception: generated WAV files served with byte ranges, and fake players that
+record what they were told. It runs two pages side by side for the console and the
+bar, and follows a real pop-up for the popped-out window.
 
 ### Live checks: what no suite here can see
 
 1. The bar plays sound after one press inside Owlbear, and **keeps playing** while
    the map is used.
-2. `cdn1.suno.ai/<id>.mp3` plays for a page on `gsgrimoire.github.io`. Try
-   *Liquid Banjo* (`suno.com/song/dd6fccb4-531b-4a6d-ba32-9a181e3c4670`), and check
-   that joining partway through lands at the right place (that needs byte ranges).
-3. The Copy for Radio bookmark on a real Suno playlist page finds every song, with
-   titles. It was tested against a page shaped the way Suno's links are expected
-   to be, not against Suno.
-4. YouTube's real player starts from our press, or shows "Press play on the
+2. **The popped-out console connects.** Owlbear's own security headers decide
+   whether a window opened from its frames can talk back; if it cannot, the bar
+   says so and the Radio panel does the same job.
+3. Suno's `cdn1.suno.ai/<id>.mp3` plays for a page on `gsgrimoire.github.io`
+   (try *Liquid Banjo*, `suno.com/song/dd6fccb4-531b-4a6d-ba32-9a181e3c4670`), and
+   joining partway lands at the right place.
+4. YouTube's real player starts from the Tune in press, or shows "Press play on the
    video once". Try the GS Grimoire playlist.
-5. Two players stay within a couple of seconds of each other.
-6. Initiative, Threat, Momentum and a Breather from the D&M extension each do what
-   the soundscape says.
+5. SoundCloud's real widget plays inside the bar and seeks where it is told.
+6. Two players stay within a couple of seconds of each other, music and layers.
+7. Switching Owlbear scenes recalls the bound radio scene (the suite assumes
+   Owlbear reports a scene switch through `onReadyChange`).
+8. With D&M in the room: initiative, Threat, a Breather, and an open roll's critical
+   each do what the Reactions tab says; a hidden roll does nothing.
+9. The Copy for Radio bookmark on a real Suno playlist page finds every song.
 
 ## Releases
 
-- **0.2**: paste Suno embed codes, or any text with links, straight into a
-  playlist; a Copy for Radio bookmark takes a whole Suno playlist at once. Fixed a
-  late-joining player waiting up to four seconds to catch up.
-- **0.1**: first version. Mixed playlists from YouTube, YouTube playlists, Suno
-  and audio links. Synced playback, a docked bar, and a D&M soundscape.
+- **1.0**: ambience layers under the music (looped or "now and then"); a soundboard
+  with pages; scenes that recall music and ambience together, and follow Owlbear
+  scene switches; reactions to D&M rolls, pools, initiative and rests; SoundCloud
+  and Dropbox sources; the console, in Owlbear or in its own window. A 0.2 library
+  is upgraded in place.
+- **0.2**: paste Suno embed codes, or any text with links; a Copy for Radio bookmark
+  for whole Suno playlists. Fixed a late-joining player waiting up to four seconds
+  to catch up.
+- **0.1**: first version. Mixed playlists from YouTube and Suno, synced playback, a
+  docked bar, and a D&M soundscape.

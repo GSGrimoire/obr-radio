@@ -1,15 +1,15 @@
 {
   "name": "GS Grimoire Radio",
-  "version": "0.2",
+  "version": "1.0",
   "manifest_version": 1,
   "author": "GS Grimoire",
-  "description": "Play music to the whole table from YouTube and Suno links, with sounds that react to the Dreams & Machines extension",
+  "description": "Music, ambience and a soundboard for the whole table, from YouTube, Suno, SoundCloud, Dropbox and audio links, with sounds and scenes that react to the Dreams & Machines extension",
   "icon": "https://gsgrimoire.github.io/obr-radio/icon.svg",
   "action": {
     "title": "Radio",
     "icon": "https://gsgrimoire.github.io/obr-radio/icon.svg",
     "popover": "https://gsgrimoire.github.io/obr-radio/index.html",
-    "height": 640,
-    "width": 380
+    "height": 520,
+    "width": 420
   }
 }

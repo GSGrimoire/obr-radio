@@ -6,73 +6,70 @@
 <title>Radio</title>
 <link rel="stylesheet" href="style.css">
 </head>
-<body>
-<div class="panel">
-  <h1>Radio <span id="gm-badge" class="badge" hidden>GM</span></h1>
+<body class="console">
+<header class="c-head">
+  <h1>Radio</h1>
+  <span id="c-conn" class="pill">Connecting…</span>
+  <span id="c-dnm" class="pill subtle" hidden>D&amp;M</span>
+  <span class="spacer"></span>
+  <span id="c-version" class="muted"></span>
+</header>
 
-  <div class="card">
-    <div class="muted">Now playing</div>
-    <div id="now-title"><strong>Nothing playing</strong></div>
-    <div id="now-label" class="muted"></div>
-    <div class="row" style="margin-top:8px">
-      <button id="open-bar" class="primary">Open the radio</button>
-      <span class="muted">Music plays in the radio bar. Keep it open while you play.</span>
-    </div>
-    <p id="no-gm" class="error" hidden>No GM in the room. The music will not change until a GM joins.</p>
-  </div>
-
-  <div id="gm" hidden>
-    <h2>Playlists</h2>
-    <div class="card">
-      <div class="row">
-        <select id="list-pick" class="grow" aria-label="Playlist"></select>
-        <button id="list-delete">Delete</button>
-      </div>
-      <div class="row" style="margin-top:6px">
-        <input type="text" id="list-name" class="grow" maxlength="40" placeholder="Playlist name" aria-label="Playlist name">
-        <button id="list-new">New</button>
-        <button id="list-rename">Rename</button>
-      </div>
-      <p class="muted">One link per line. Add a title in front with a bar: <code>Tavern | https://suno.com/song/…</code>.
-        YouTube videos, YouTube playlists, Suno songs and audio-file links can be mixed.
-        Embed codes can be pasted whole.
-        <a href="suno.html" target="_blank" rel="noopener">Copy a whole Suno playlist at once</a>.</p>
-      <textarea id="list-text" spellcheck="false" wrap="off" placeholder="https://youtube.com/playlist?list=…&#10;Liquid Banjo | https://suno.com/song/…"></textarea>
-      <div id="list-errors"></div>
-      <div class="row" style="margin-top:6px">
-        <button id="list-save">Save</button>
-        <button id="list-play" class="primary">Play this list</button>
-        <label class="muted"><input type="checkbox" id="shuffle"> Shuffle</label>
-        <span id="list-msg" class="muted"></span>
-      </div>
-    </div>
-
-    <h2>Soundscape</h2>
-    <div class="card">
-      <p class="muted">Reacts to the Dreams &amp; Machines extension, if it is in the room.</p>
-      <div class="row">
-        <label for="combat-list">Initiative plays</label>
-        <select id="combat-list" class="grow"></select>
-      </div>
-      <p class="muted">When initiative ends, the music it interrupted comes back where it left off.</p>
-      <div class="muted" style="margin:8px 0 4px">Sounds. A Suno or audio-file link each; leave empty for none.</div>
-      <div id="cues"></div>
-      <div class="row">
-        <label for="cue-seconds">Play each sound for</label>
-        <input type="number" id="cue-seconds" min="2" max="30" style="width:4.5em"> <span class="muted">seconds</span>
-        <button id="cues-save">Save</button>
-        <span id="cues-msg" class="muted"></span>
-      </div>
-    </div>
-
-    <details class="card">
-      <summary>Backup</summary>
-      <p class="muted">Playlists are kept in this browser. Copy this text somewhere safe, or paste one in to load it.</p>
-      <textarea id="backup" spellcheck="false"></textarea>
-      <div class="row"><button id="backup-export">Show my library</button><button id="backup-import">Load this library</button><span id="backup-msg" class="muted"></span></div>
-    </details>
-  </div>
+<div id="c-nobar" class="card" hidden>
+  <p id="c-nobar-text"></p>
+  <button id="c-open-bar" class="primary" hidden>Open the radio</button>
 </div>
-<script type="module" src="panel.js"></script>
+
+<div id="c-toast" class="toast" role="status" hidden></div>
+
+<nav id="c-tabs" class="tabs" hidden>
+  <button data-tab="play" class="on">Play</button>
+  <button data-tab="library">Library</button>
+  <button data-tab="reactions">Reactions</button>
+  <button data-tab="settings">Settings</button>
+</nav>
+
+<main id="c-main">
+  <!-- Everyone: what is playing, and your own volume -->
+  <section id="c-me" class="card">
+    <div class="now-big">
+      <div id="c-now-title" class="now-title">Nothing playing</div>
+      <div id="c-now-sub" class="muted"></div>
+    </div>
+    <div class="sliders">
+      <label>Music <input type="range" id="c-v-music" min="0" max="100"></label>
+      <label>Ambience <input type="range" id="c-v-amb" min="0" max="100"></label>
+      <label>Sounds <input type="range" id="c-v-fx" min="0" max="100"></label>
+      <button id="c-mute" class="ghost" aria-pressed="false">Mute</button>
+    </div>
+    <p class="muted small">Your volume, for you only. The sound plays in the radio bar at the edge of the map — keep it open.</p>
+  </section>
+
+  <div class="tab" data-panel="play">
+    <div class="grid2">
+      <section class="card" id="c-music"></section>
+      <section class="card" id="c-amb"></section>
+    </div>
+    <section class="card" id="c-scenes"></section>
+    <section class="card" id="c-board"></section>
+  </div>
+
+  <div class="tab" data-panel="library" hidden>
+    <section class="card" id="c-lists"></section>
+    <section class="card" id="c-sounds"></section>
+    <section class="card" id="c-scene-list"></section>
+  </div>
+
+  <div class="tab" data-panel="reactions" hidden>
+    <section class="card" id="c-obrscene"></section>
+    <section class="card" id="c-react"></section>
+  </div>
+
+  <div class="tab" data-panel="settings" hidden>
+    <section class="card" id="c-settings"></section>
+    <section class="card" id="c-backup"></section>
+  </div>
+</main>
+<script type="module" src="console.js"></script>
 </body>
 </html>
