@@ -227,8 +227,6 @@ bar, and follows a real pop-up for the popped-out window.
    Pausing a video by clicking it stays paused. Try the GS Grimoire playlist.
 5. SoundCloud's real widget plays inside the bar and seeks where it is told, and a
    public playlist (`soundcloud.com/…/sets/…`) moves on track by track.
-11. Moving the bar (⤡) keeps it playing, or asks for Tune in once. Which one depends
-    on what Owlbear lets its frames do; the suite shows both paths work.
 6. Two players stay within a couple of seconds of each other, music and layers.
 7. Switching Owlbear scenes recalls the bound radio scene (the suite assumes
    Owlbear reports a scene switch through `onReadyChange`).
@@ -238,6 +236,8 @@ bar, and follows a real pop-up for the popped-out window.
 10. The starter packs' YouTube ambiences embed (a channel can switch embedding
     off; the radio skips a video that will not play and says so), and the hosted
     loops and effects play from `gsgrimoire.github.io`.
+11. Moving the bar (⤡) keeps it playing, or asks for Tune in once. Which one depends
+    on what Owlbear lets its frames do; the suite shows both paths work.
 12. Crossfading between two Suno songs sounds smooth for players as well as the GM.
 13. A player's pad press is heard by everyone, and the GM switching pads off
     removes them from the players' panels.
