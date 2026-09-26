@@ -10,7 +10,7 @@ a scene for initiative (and the music it interrupted, back afterwards), a sting 
 Threat rises, a sound for a critical or a complication. Without D&M it is a complete
 radio on its own.
 
-Version **1.2**. Played once in a real room (1.1B); what that found is fixed in 1.2. See *Live checks* below.
+Version **1.3**. Played once in a real room (1.1B); what that found is fixed in 1.2. See *Live checks* below.
 
 **Install:** in Owlbear, add `https://gsgrimoire.github.io/obr-radio/manifest.json`.
 
@@ -114,6 +114,24 @@ are one-shot broadcasts from the GM's bar: nothing to sync, nothing to catch up 
 | `sdk.js` | the Owlbear SDK, vendored (the same bundle as `dnm-obr`) |
 
 ### Decisions, and why
+
+- **No Spotify (checked 2026-09-26).** Spotify's Developer Policy, section III, forbids
+  what the radio does: "an application which plays content from a single source to
+  several simultaneous listeners", letting any system "overlap any Spotify Content
+  with any other audio content" (ambience and the soundboard do exactly that), and
+  "any product or service which is integrated with streams or content from another
+  service". Its embed player is part of the platform the policy covers. Put Spotify
+  music somewhere the radio can play, or play it from Spotify yourself alongside.
+- **No Patreon.** Patreon has no player or streaming API; post audio somewhere
+  streamable as well (Suno, YouTube, SoundCloud) and paste that link.
+- **Crossfading is the GM's bar's call (1.3).** It starts the next track while the
+  last one still has the crossfade's length to run, and marks the room record
+  (`xf`) so every player fades the old one out over the same time. Only an audio
+  file fades out under the next: a video would need a second tile, and a playlist
+  inside one player moves on by itself.
+- **Players' pads are asked for, never fired (1.3).** A player's press is a request
+  to the GM's bar, which plays it only if the GM opened that page, and at most once
+  per player every 2.5 seconds. Only the GM's bar can say which pads exist.
 
 - **Nothing redraws under a pointer (1.2).** The console redraws from the bar's
   reports. A redraw between a button's press and its release replaces the button,
@@ -220,9 +238,16 @@ bar, and follows a real pop-up for the popped-out window.
 10. The starter packs' YouTube ambiences embed (a channel can switch embedding
     off; the radio skips a video that will not play and says so), and the hosted
     loops and effects play from `gsgrimoire.github.io`.
+12. Crossfading between two Suno songs sounds smooth for players as well as the GM.
+13. A player's pad press is heard by everyone, and the GM switching pads off
+    removes them from the players' panels.
 
 ## Releases
 
+- **1.3**: crossfading between music tracks (Settings: 0–12 seconds); pads for
+  players — the GM opens one soundboard page, and players press it from their
+  Radio panel, heard by everyone. Spotify and Patreon examined and set aside: see
+  Decisions.
 - **1.2**: from the first table. Buttons work on the first press (the panel no
   longer redraws under a click), and reactions and Owlbear-scene choices save as
   they are picked. SoundCloud playlists play. Every ambience layer can be paused

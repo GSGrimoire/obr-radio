@@ -18,7 +18,7 @@ import {
 } from "./link.js";
 import { parseTrackList, formatTrackList, parseAny, isEmbed, KINDS } from "./sources.js";
 import {
-  readLibrary, parseSoundList, formatSoundList, soundPages, newId, findScene, MAX_LAYERS,
+  readLibrary, parseSoundList, formatSoundList, soundPages, newId, findScene, MAX_LAYERS, CROSSFADE_MAX, readPadList,
 } from "./library.js";
 import { CUES } from "./reactions.js";
 import { displayTitle, MAX_EMBEDS } from "./state.js";
@@ -180,6 +180,7 @@ function renderHeader() {
     if (!gm && t.dataset.panel !== "play") t.hidden = true;
   }
   for (const id of ["c-music", "c-amb", "c-scenes", "c-board"]) $(id).hidden = !gm;
+  $("c-ppads").hidden = gm || !connected() || !readPadList(model.info.pads).length;
   // Your own volume belongs with the playing, not above the GM's library editors.
   $("c-me").hidden = gm && tab !== "play";
 }
@@ -621,6 +622,16 @@ function renderSettings() {
     h("label", { class: "inline" }, "Fade in and out over ",
       h("input", { type: "number", class: "num", min: 0, max: 6, step: 0.5, value: String(lib.fadeSeconds),
         onchange: (ev) => call("lib.set", { key: "fadeSeconds", value: Number(ev.target.value) }) }), " seconds"),
+    h("label", { class: "inline", title: "The next track starts this long before the last one ends, and they overlap. Audio files and Suno songs only." }, "Crossfade music tracks over ",
+      h("input", { type: "number", class: "num", min: 0, max: CROSSFADE_MAX, step: 1, value: String(lib.crossfade),
+        onchange: (ev) => call("lib.set", { key: "crossfade", value: Number(ev.target.value) }) }), " seconds (0 = off)"),
+    h("h2", { text: "Pads for players" }),
+    h("p", { class: "muted small", text: "Let players press one soundboard page themselves — a bell, a spell, a battle cry. Everyone hears it. Each player can press once every few seconds." }),
+    h("label", { class: "inline" }, h("input", { type: "checkbox", checked: lib.playerPads.on,
+      onchange: (ev) => call("lib.set", { key: "playerPads", value: { ...lib.playerPads, on: ev.target.checked, page: lib.playerPads.page || soundPages(lib)[0] || "" } }) }), " Players may press the page "),
+    options(h("select", { "aria-label": "Page players may press",
+      onchange: (ev) => call("lib.set", { key: "playerPads", value: { ...lib.playerPads, page: ev.target.value } }) }),
+      [["", "— choose —"], ...soundPages(lib).map((p) => [p, p])], lib.playerPads.page),
     h("p", { class: "muted small", text: POPOUT
       ? "This window is a remote control for the radio bar in Owlbear. Close it any time; the sound carries on."
       : "Want the soundboard on another screen? Press ⧉ on the radio bar to open this console in its own window." }),
@@ -675,10 +686,29 @@ for (const b of document.querySelectorAll("#c-tabs button")) {
   b.addEventListener("click", () => { showTab(b.dataset.tab); render(); });
 }
 
+// A player's pads: the page the GM opened to them. The GM's bar decides each press.
+function renderPlayerPads() {
+  const pads = readPadList(model.info.pads);
+  return [
+    h("h2", { text: "Soundboard" }),
+    h("p", { class: "muted small", text: "The GM has opened these to you. Everyone hears them." }),
+    h("div", { class: "pads" }, pads.map((p) => h("button", {
+      class: "pad", style: "--hue:205",
+      onclick: async (ev) => {
+        const b = ev.currentTarget;
+        b.classList.add("hit");
+        setTimeout(() => b.classList.remove("hit"), 250);
+        await call("pad.press", { id: p.id });
+      },
+    }, p.name))),
+  ];
+}
+
 function render() {
   renderHeader();
   if (!connected()) return;
   renderMe();
+  if (model.role !== "GM" && readPadList(model.info.pads).length) section("c-ppads", renderPlayerPads);
   if (model.role !== "GM" || !model.lib) return;
   if (model.info.error && model.info.error !== shownError) toast(model.info.error, true);
   shownError = model.info.error;

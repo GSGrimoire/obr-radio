@@ -34,7 +34,14 @@ track that failed to load wrongly un-tuned the listener.
 SoundCloud playlists, per-layer pause, scenes that stop when pressed again, a hand
 on a video obeyed, reused YouTube players.
 
-**Next: the rest of the playtest.** Then Phase 5, in whatever order it suggests.
+**1.3** took Phase 5: crossfading, and pads for players. SoundCloud was already in
+(1.0, playlists in 1.2), and the backup already covers the whole library. Spotify
+was examined and set aside — its Developer Policy forbids one source playing to
+several listeners, overlapping its audio with other audio, and mixing it with other
+services, and the radio does all three (see README, Decisions). Patreon has no
+player to use.
+
+**Next: the rest of the playtest.** The plan below is now built through Phase 5.
 
 ---
 

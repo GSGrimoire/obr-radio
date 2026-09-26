@@ -23,6 +23,23 @@ export const MAX_SCENES = 40;
 export const MAX_LAYERS = 4;     // ambience layers playing at once; see state.js for why
 export const NAME_MAX = 40;
 
+// The pads players may press: the sounds on the page the GM opened to them, audio
+// only (a video cannot be pressed). Empty when that is switched off.
+export function playerPadList(lib) {
+  if (!lib.playerPads || !lib.playerPads.on || !lib.playerPads.page) return [];
+  return lib.sounds.filter((s) => s.page === lib.playerPads.page && s.track.k === "a")
+    .slice(0, MAX_PLAYER_PADS).map((s) => ({ id: s.id, name: s.name }));
+}
+export const MAX_PLAYER_PADS = 24;
+
+// The same list, as a player's bar reads it from a broadcast: untrusted.
+export function readPadList(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, MAX_PLAYER_PADS)
+    .map((p) => p && typeof p === "object" ? { id: cleanId(p.id), name: cleanText(p.name, NAME_MAX) } : null)
+    .filter((p) => p && p.id && p.name);
+}
+
 export function newId(prefix, rand = Math.random) {
   return prefix + Date.now().toString(36) + Math.floor(rand() * 1e6).toString(36);
 }
@@ -37,8 +54,15 @@ export function emptyLibrary() {
     shuffle: false,
     autoScenes: true,
     fadeSeconds: 1.5,
+    // 1.3: seconds of overlap when one music track gives way to the next (0 = none).
+    crossfade: 0,
+    // 1.3: one soundboard page the players may press themselves. Off unless the GM
+    // turns it on; the GM's bar decides every press, and limits how often.
+    playerPads: { on: false, page: "" },
   };
 }
+
+export const CROSSFADE_MAX = 12;
 
 const clamp = (x, lo, hi, dflt) => {
   const n = Number(x);
@@ -129,6 +153,9 @@ export function readLibrary(raw) {
   lib.shuffle = !!raw.shuffle;
   lib.autoScenes = raw.autoScenes !== false;
   lib.fadeSeconds = clamp(raw.fadeSeconds, 0, 6, 1.5);
+  lib.crossfade = clamp(raw.crossfade, 0, CROSSFADE_MAX, 0);
+  const pp = raw.playerPads && typeof raw.playerPads === "object" ? raw.playerPads : {};
+  lib.playerPads = { on: pp.on === true, page: cleanText(pp.page, NAME_MAX) };
   return lib;
 }
 

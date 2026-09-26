@@ -5,12 +5,13 @@ import {
 } from "../sources.js";
 import {
   readLibrary, parseSoundList, formatSoundList, soundPages, MAX_TRACKS, MAX_LAYERS, emptyLibrary,
+  playerPadList, readPadList, MAX_PLAYER_PADS,
 } from "../library.js";
 import {
   emptyState, readState, writeState, musicStart, musicAdvance, musicPause, musicResume, musicStop,
   musicVolume, musicSub, musicPosition, layerPosition, needsSeek, nextIndex, layerAdd, layerRemove,
   layerVolume, sceneApply, sceneFromState, snapshot, restore, embedCount, stateSize, displayTitle,
-  MAX_EMBEDS, STATE_BUDGET, layerPause, sceneStop,
+  MAX_EMBEDS, STATE_BUDGET, layerPause, sceneStop, crossfadeDue, musicCrossfade,
 } from "../state.js";
 import { diffDnm, planReaction, rollCues, sortCues } from "../reactions.js";
 import {
@@ -551,6 +552,42 @@ const YT = (v) => ({ k: "yt", v, t: "video " + v });
   ok("the second copy is dropped", first(m) === true && first(m) === false);
   first({ mid: "b" }); first({ mid: "c" });
   ok("and the memory is bounded", first(m) === true);
+}
+
+// -------------------------------------------------------------
+// 1.3: crossfading, and pads for players
+// -------------------------------------------------------------
+{
+  const lib = readLibrary({ v: 2, crossfade: 4, lists: [{ id: "l", name: "L", tracks: [A("one"), A("two"), YT("aaaaaaaaaaa")] }] });
+  ok("the crossfade is read, and bounded", lib.crossfade === 4 && readLibrary({ v: 2, crossfade: 99 }).crossfade === 12 && readLibrary({ v: 2 }).crossfade === 0);
+  const s0 = musicStart(emptyState(), lib, "l", 0, 1000).state;
+  ok("an ordinary start has no crossfade mark", !("xf" in s0.music));
+  ok("a crossfade is due in the track's last seconds", crossfadeDue(s0.music, 117, 120, 4) && !crossfadeDue(s0.music, 100, 120, 4));
+  ok("not when switched off", !crossfadeDue(s0.music, 119, 120, 0));
+  ok("not before the length is known", !crossfadeDue(s0.music, 5, NaN, 4));
+  ok("not for a track too short to overlap", !crossfadeDue(s0.music, 9, 10, 4));
+  ok("not while paused", !crossfadeDue(musicPause(s0, 5000).state.music, 117, 120, 4));
+  const vid = musicStart(emptyState(), lib, "l", 2, 1000).state;
+  ok("not out of a video", !crossfadeDue(vid.music, 297, 300, 4));
+  const x = musicCrossfade(s0, lib, 120000, () => 0).state;
+  ok("the crossfade starts the next track, marked", x.music.seq === 2 && x.music.i === 1 && x.music.xf === 4);
+  ok("the mark survives the room", readState({ k: x }, "k").music.xf === 4);
+  ok("and is dropped by the next ordinary change", !("xf" in musicAdvance(x, lib, 200000).state.music));
+  ok("a hostile mark is bounded", readState({ k: { v: 2, music: { ...x.music, xf: 1e9 } } }, "k").music.xf === 12);
+
+  const board = readLibrary({ v: 2, sounds: [
+    { id: "bell", name: "Bell", track: A("bell"), page: "Players" },
+    { id: "vid", name: "Video", track: YT("bbbbbbbbbbb"), page: "Players" },
+    { id: "boom", name: "Boom", track: A("boom"), page: "GM" }] });
+  ok("pads for players are off unless turned on", board.playerPads.on === false && playerPadList(board).length === 0);
+  const open = readLibrary({ ...board, playerPads: { on: true, page: "Players" } });
+  ok("turned on, they are the chosen page's audio sounds", playerPadList(open).map((p) => p.id).join() === "bell");
+  ok("only true turns them on", readLibrary({ ...board, playerPads: { on: "yes", page: "Players" } }).playerPads.on === false);
+  ok("a page with nothing on it offers nothing", playerPadList(readLibrary({ ...board, playerPads: { on: true, page: "Nope" } })).length === 0);
+  ok("a heard pad list is read as untrusted", readPadList([{ id: "a b", name: "x" }, { id: "ok", name: "<b>Fine</b>" }, null, 5]).length === 1);
+  ok("and bounded", readPadList(Array.from({ length: 100 }, (_, i) => ({ id: "p" + i, name: "P" }))).length === MAX_PLAYER_PADS);
+  ok("not a list is nothing", readPadList({ id: "x" }).length === 0);
+  ok("a player may ask for a pad, but not fire a sound", OPS.has("pad.press") && !GM_ONLY.has("pad.press") && GM_ONLY.has("sound.fire"));
 }
 
 console.log(`radio: ${passed} passed, ${failed} failed`);

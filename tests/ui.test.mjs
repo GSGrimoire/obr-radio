@@ -159,6 +159,7 @@ function wav(seconds, freq = 440) {
 const LONG = wav(90);
 const SHORT = wav(1.5);
 const CLIP = wav(3, 880);
+const MID = wav(12, 330);
 const U_LONG = "0f6d3c1e-2b8a-4e5f-9a7b-1c2d3e4f5a6b";
 const U_SHORT = "11111111-2222-4333-8444-555555555555";
 const U_OLD = "99999999-9999-4999-8999-999999999999";   // an old song: .mp3 only, no .mp4
@@ -235,7 +236,8 @@ async function routes(page) {
     // A faked 403 on a media request never completes in Playwright; a real CDN's 403
     // ends the request and fires the element's error. A failed request does the same.
     if (url.includes(U_OLD) && url.endsWith(".mp4")) { route.abort("failed"); return; }
-    const body = url.includes(U_SHORT) || url.includes("short") ? SHORT
+    const body = url.includes("mid-") ? MID
+      : url.includes(U_SHORT) || url.includes("short") ? SHORT
       : url.includes(U_LONG) || url.includes(U_OLD) || url.includes("long") ? LONG : CLIP;
     // Byte ranges, as a real CDN serves them. Without them Chromium cannot seek past
     // what it has buffered, and a far seek quietly lands back at the start.
@@ -1149,6 +1151,94 @@ const DNM = { threat: 0, momentum: 2, initiative: null, epochs: { breather: 0, b
   const b = await run(browser, false);
   ok("move: where the browser refuses, it asks for Tune in again rather than sitting silent", !b.playing && b.asks);
   ok("move: nothing threw", a.errors.length === 0 && b.errors.length === 0);
+}
+
+
+// -------------------------------------------------------------
+// 11. 1.3: crossfading, and pads for players
+// -------------------------------------------------------------
+{
+  // Two 12-second tracks and a 3-second crossfade, joined 9.5 s into the first.
+  const lib = { v: 2, crossfade: 3, fadeSeconds: 0.5,
+    lists: [{ id: "x", name: "Mix", tracks: [{ k: "a", u: FILE("mid-one"), t: "One" }, { k: "a", u: FILE("mid-two"), t: "Two" }] }] };
+  const page = await browser.newPage();
+  const errors = await open(page, { role: "GM", conn: "conn-gm", players: [], library: lib,
+    meta: room({ seq: 1, track: lib.lists[0].tracks[0], at: Date.now() - 9500, paused: null, list: "x", i: 0, label: "Mix", vol: 1 }) });
+  await tune(page);
+  await page.waitForFunction((k) => { const m = window.__stub.st.meta[k].music; return m && m.seq === 2; }, STATE_KEY, { timeout: 5000 }).catch(() => {});
+  const s = await roomState(page);
+  ok("crossfade: the next track starts before the last one ends", s.music.seq === 2 && s.music.track.t === "Two" && s.music.xf === 3);
+  await sleep(700);
+  const both = await media(page, 'audio[data-role="music"]');
+  ok(`crossfade: for a moment both play (${both.length})`, both.length === 2 && both.every((a) => !a.paused));
+  const out = both.find((a) => a.src.includes("mid-one"));
+  const inn = both.find((a) => a.src.includes("mid-two"));
+  ok(`crossfade: one falling as the other rises (${out && out.vol.toFixed(2)} / ${inn && inn.vol.toFixed(2)})`, !!out && !!inn && out.vol < 0.9 && inn.vol > 0.05 && inn.vol < 0.9);
+  await sleep(3200);
+  const after = await media(page, 'audio[data-role="music"]');
+  ok("crossfade: then only the new one is left", after.length === 1 && after[0].src.includes("mid-two"));
+  ok("crossfade: once, not every check", (await roomState(page)).music.seq === 2);
+  ok("crossfade: nothing threw", errors.length === 0);
+  if (errors.length) console.log("     ", errors[0]);
+  await page.close();
+}
+
+{
+  // The GM opens one page to the players; a player presses a pad on it.
+  const lib = { ...LIB, playerPads: { on: true, page: "Coast" } };
+  const gm = await browser.newPage();
+  const gmErrors = await open(gm, { role: "GM", conn: "conn-gm", players: [{ role: "PLAYER", connectionId: "conn-p" }], library: lib, meta: room(null) });
+  const offered = (await sent(gm)).filter((m) => m.data.type === "pads").at(-1);
+  ok("pads: the GM's bar tells the players which pads they have", !!offered && offered.dest === "REMOTE" && offered.data.pads.map((p) => p.id).join() === "s-gull");
+
+  const ctx = await browser.newContext();
+  const pbar = await ctx.newPage();
+  const pErrors = await open(pbar, { role: "PLAYER", conn: "conn-p", meta: room(null) });
+  const pcon = await ctx.newPage();
+  const cErrors = await open(pcon, { file: "index.html", role: "PLAYER", conn: "conn-p" });
+  await deliver(pbar, offered.data);
+  await pcon.waitForFunction(() => !document.getElementById("c-ppads").hidden, null, { timeout: 5000 }).catch(() => {});
+  ok("pads: the player's console shows them", (await pcon.$$eval("#c-ppads .pad", (n) => n.map((x) => x.textContent))).join() === "Gull");
+  await pcon.click("#c-ppads .pad:has-text('Gull')");
+  await sleep(400);
+  const ask = (await sent(pbar)).filter((m) => m.data.type === "padRequest");
+  ok("pads: a press asks the GM's bar, and fires nothing itself", ask.length === 1 && ask[0].data.id === "s-gull" && !(await sent(pbar)).some((m) => m.data.type === "sound"));
+
+  const fired = async () => (await sent(gm)).filter((m) => m.data.type === "sound").length;
+  const before = await fired();
+  await deliver(gm, { type: "padRequest", id: "s-gull" }, "conn-p");
+  await sleep(300);
+  ok("pads: the GM's bar plays it for everyone", (await fired()) === before + 1 && (await sent(gm)).filter((m) => m.data.type === "sound").at(-1).dest === "ALL");
+  await deliver(gm, { type: "padRequest", id: "s-gull" }, "conn-p");
+  await sleep(300);
+  ok("pads: a second press at once is refused", (await fired()) === before + 1);
+  await deliver(gm, { type: "padRequest", id: "s-sting" }, "conn-q");
+  await sleep(300);
+  ok("pads: a sound on a page not opened is refused", (await fired()) === before + 1);
+  await sleep(2400);
+  await deliver(gm, { type: "padRequest", id: "s-gull" }, "conn-p");
+  await sleep(300);
+  ok("pads: after a moment, the player may press again", (await fired()) === before + 2);
+
+  // Switched off: the players' pads go.
+  await gm.evaluate(({ k, l }) => { localStorage.setItem(k, JSON.stringify(l)); }, { k: LIBRARY_KEY, l: { ...lib, playerPads: { on: false, page: "Coast" } } });
+  await gm.reload();
+  await gm.waitForFunction(() => !!window.__stub);
+  await sleep(300);
+  const closed = (await sent(gm)).filter((m) => m.data.type === "pads").at(-1);
+  await deliver(pbar, closed.data);
+  await sleep(600);
+  ok("pads: switched off, they disappear for players", closed.data.pads.length === 0 && (await pcon.isHidden("#c-ppads")));
+  await deliver(gm, { type: "padRequest", id: "s-gull" }, "conn-p");
+  await sleep(300);
+  ok("pads: and a press is refused", (await sent(gm)).filter((m) => m.data.type === "sound").length === 0);
+  await deliver(pbar, { type: "pads", pads: [{ id: "s-sting", name: "Sting" }] }, "conn-x");
+  await sleep(300);
+  ok("pads: only the GM can open pads to a player", await pcon.isHidden("#c-ppads"));
+  ok("pads: nothing threw", gmErrors.length === 0 && pErrors.length === 0 && cErrors.length === 0);
+  if (gmErrors.length || pErrors.length || cErrors.length) console.log("     ", gmErrors[0] || pErrors[0] || cErrors[0]);
+  await ctx.close();
+  await gm.close();
 }
 
 await browser.close();

@@ -26,7 +26,7 @@ export const NS = "gsradio";
 
 export const OPS = new Set([
   // everyone
-  "prefs.set",
+  "prefs.set", "pad.press",
   // GM
   "music.play", "music.toggle", "music.next", "music.prev", "music.stop", "music.vol",
   "layer.add", "layer.remove", "layer.vol", "layer.pause", "layer.clear",
@@ -39,7 +39,7 @@ export const OPS = new Set([
   "lib.put", "lib.set", "react.set",
 ]);
 
-export const GM_ONLY = new Set([...OPS].filter((op) => op !== "prefs.set" && op !== "sound.preview"));
+export const GM_ONLY = new Set([...OPS].filter((op) => !["prefs.set", "sound.preview", "pad.press"].includes(op)));
 
 export function channelName(roomId) {
   return `${NS}:${String(roomId || "room").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 60)}`;

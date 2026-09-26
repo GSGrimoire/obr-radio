@@ -28,7 +28,7 @@ import {
   CORNERS, RADIO_VERSION, readPrefs, barPopover, barSize,
 } from "./radio.js";
 import { readTrack, trackKey, isEmbed, isSet } from "./sources.js";
-import { readLibrary, findSound, findScene, newId } from "./library.js";
+import { readLibrary, findSound, findScene, newId, playerPadList, readPadList } from "./library.js";
 import * as S from "./state.js";
 import { diffDnm, planReaction, dnmPresent, CUE_NAMES } from "./reactions.js";
 import {
@@ -123,9 +123,9 @@ function startFades() {
   if (fadeTimer) return;
   fadeTimer = setInterval(() => {
     let moving = false;
-    const step = fadeStep();
     for (const ch of [music, ...layers.values(), ...dying]) {
       if (!ch) continue;
+      const step = ch.step || fadeStep();
       if (ch.fade !== ch.target) {
         ch.fade = ch.fade < ch.target ? Math.min(ch.target, ch.fade + step) : Math.max(ch.target, ch.fade - step);
         moving = true;
@@ -143,18 +143,21 @@ function startFades() {
   }, 50);
 }
 
-function channel(player, extra) {
-  const ch = { player, fade: lib.fadeSeconds > 0 ? 0 : 1, target: 1, ...extra };
+// `seconds` overrides the library's fade for this channel: a crossfade's length.
+function channel(player, extra, seconds = 0) {
+  const ch = { player, fade: lib.fadeSeconds > 0 || seconds > 0 ? 0 : 1, target: 1, ...extra };
+  if (seconds > 0) ch.step = 0.05 / seconds;
   startFades();
   return ch;
 }
 
-function retire(ch) {
+function retire(ch, seconds = 0) {
   if (!ch) return;
   ch.target = 0;
+  if (seconds > 0) ch.step = 0.05 / seconds;
   // A video that fades out still holds its tile until it is gone; a fade of zero
   // seconds removes it at once.
-  if (lib.fadeSeconds <= 0) { ch.player.dispose(); return; }
+  if (lib.fadeSeconds <= 0 && !(seconds > 0)) { ch.player.dispose(); return; }
   dying.add(ch);
   startFades();
 }
@@ -208,7 +211,8 @@ function syncMusic() {
       music.key = key;
       music.player.jumpTo(m.sub);
     } else {
-      retire(music);
+      // A crossfade: the old track fades out under the new one over its length.
+      retire(music, m && m.seq === music.seq + 1 && m.xf ? m.xf : 0);
       music = null;
     }
   }
@@ -246,7 +250,7 @@ function syncMusic() {
         else if (music) { music.held = false; sync(); }
       },
     });
-    music = channel(player, { key, seq, started: Date.now() });
+    music = channel(player, { key, seq, started: Date.now() }, m.xf || 0);
     applyVolumes();
     Promise.resolve(player.load(expected, m.sub)).then(() => {
       if (m.paused !== null) player.pause();
@@ -382,6 +386,22 @@ async function musicEnded(seq) {
   await commit(next.error ? S.musicPause(now, Date.now()) : next);
 }
 
+// Crossfading: the GM's bar starts the next track while this one still has the
+// crossfade's length to run. Checked twice a second; the 4-second sync is too slow.
+function checkCrossfade() {
+  if (!isGM() || !tuned || !music || !state.music || music.xfSent) return;
+  const p = music.player;
+  if (!p.ready() || !p.playing()) return;
+  if (!S.crossfadeDue(state.music, p.time(), p.duration(), lib.crossfade)) return;
+  music.xfSent = true;
+  const seq = state.music.seq;
+  freshState().then((now) => {
+    if (!now.music || now.music.seq !== seq) return;
+    const next = S.musicCrossfade(now, lib, Date.now());
+    if (!next.error) commit(next);
+  });
+}
+
 // A track that would not play is skipped — but not forever: a playlist where
 // nothing plays (a Suno change, a network block) must stop, not spin.
 function musicFailed(seq, why) {
@@ -436,6 +456,27 @@ async function fireSound(soundId) {
     type: "sound", track: readTrack(sound.track), vol: sound.vol,
   }, { destination: "ALL" }).catch(() => {});
   return { ok: true };
+}
+
+// Pads the players may press (1.3). The GM's bar tells them which, and decides
+// every press: the setting must be on, the sound on the opened page, and one press
+// per player per PAD_GAP — a table of eager players should not drown the scene.
+const PAD_GAP = 2500;
+let heardPads = [];                 // on a player's bar: what the GM opened to them
+const lastPress = new Map();        // on the GM's bar: connection -> last press
+
+function sendPads() {
+  if (!isGM()) return;
+  OBR.broadcast.sendMessage(CHANNEL, { type: "pads", pads: playerPadList(lib) }, { destination: "REMOTE" }).catch(() => {});
+}
+
+async function padRequest(id, connectionId) {
+  if (!isGM()) return { error: "Only the GM's radio decides a press." };
+  if (!playerPadList(lib).some((p) => p.id === id)) return { error: "That pad is not open to players." };
+  const last = lastPress.get(connectionId) || 0;
+  if (Date.now() - last < PAD_GAP) return { error: "Wait a moment between presses." };
+  lastPress.set(connectionId, Date.now());
+  return fireSound(id);
 }
 
 // Scattered layers are fired by the GM's bar, one broadcast per shot, so every
@@ -543,6 +584,7 @@ function snapshotForConsole() {
       embeds: S.embedCount(state),
       gm: gmConnections.size > 0 || isGM(),
       click: clickNote,
+      pads: isGM() ? playerPadList(lib) : heardPads,
       held: !!(music && music.held) || [...layers.values()].some((c) => c.held),
     },
   };
@@ -617,6 +659,13 @@ async function runCommand(cmd) {
     case "layer.pause": return commit(S.layerPause(await freshState(), String(args.id || ""), !!args.off));
     case "layer.clear": return commit(S.layersClear(await freshState()));
     case "sound.fire": return fireSound(String(args.id || ""));
+    case "pad.press": {
+      const id = String(args.id || "");
+      if (isGM()) return fireSound(id);
+      if (!heardPads.some((p) => p.id === id)) return { error: "That pad is not open to players." };
+      await OBR.broadcast.sendMessage(CHANNEL, { type: "padRequest", id }, { destination: "REMOTE" }).catch(() => {});
+      return { ok: true };
+    }
     case "sound.stopAll":
       await OBR.broadcast.sendMessage(CHANNEL, { type: "stopSounds" }, { destination: "ALL" }).catch(() => {});
       return { ok: true };
@@ -635,7 +684,7 @@ async function runCommand(cmd) {
     case "lib.set": {
       // One setting, merged into the library as it is now.
       const key = String(args.key || "");
-      if (!["shuffle", "autoScenes", "fadeSeconds"].includes(key)) return { error: "Unknown setting." };
+      if (!["shuffle", "autoScenes", "fadeSeconds", "crossfade", "playerPads"].includes(key)) return { error: "Unknown setting." };
       return putLibrary({ ...lib, [key]: args.value });
     }
     case "react.set": {
@@ -654,6 +703,7 @@ function putLibrary(raw) {
   if (!saveJSON(LIBRARY_KEY, next)) return { error: "This browser would not save it. Is site data blocked for owlbear.rodeo?" };
   lib = next;
   syncScatter();
+  sendPads();
   push();
   return { ok: true };
 }
@@ -722,8 +772,11 @@ const lastHeard = { sound: 0, shot: 0 };
 function onRoomMessage(ev) {
   const data = ev && ev.data;
   if (!data || typeof data !== "object") return;
-  if (data.type === "hello") { if (isGM()) sendTick(); return; }
+  if (data.type === "hello") { if (isGM()) { sendTick(); sendPads(); } return; }
+  // The one message a player's bar may send the GM's: asking for a pad.
+  if (data.type === "padRequest") { if (isGM()) padRequest(String(data.id || ""), String(ev.connectionId || "")); return; }
   if (!gmConnections.has(ev.connectionId)) return;
+  if (data.type === "pads" && !isGM()) { heardPads = readPadList(data.pads); push(); return; }
   if (data.type === "tick" && !isGM()) {
     const now = Number(data.now);
     if (Number.isFinite(now)) { clockOffset = now - Date.now(); sync(); }
@@ -848,7 +901,8 @@ OBR.onReady(async () => {
   // A bar reopened after a move starts straight away, not at the next check.
   if (tuned) sync();
   push();
-  if (isGM()) setInterval(sendTick, 10000);
+  if (isGM()) { setInterval(sendTick, 10000); sendPads(); }
   else OBR.broadcast.sendMessage(CHANNEL, { type: "hello" }, { destination: "REMOTE" }).catch(() => {});
+  setInterval(checkCrossfade, 500);
   setInterval(sync, 4000);
 });

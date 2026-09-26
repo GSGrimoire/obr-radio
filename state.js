@@ -18,6 +18,8 @@
 //   off     a layer the GM has paused. It stays in the mix, silent, until resumed.
 //   list, i which of the GM's playlists and where in it. Ids only — players never
 //           need the list itself, and it would not fit.
+//   xf      (1.3) this track began before the last one ended: the last one fades
+//           out over xf seconds under it. Absent for an ordinary change.
 //   nt      the title of what is actually sounding, when only a player knows it
 //           (a video inside a YouTube playlist). The GM's bar fills it in.
 //   mode    "loop" plays continuously; "scatter" is fired now and then by the GM's
@@ -64,6 +66,7 @@ function readMusic(raw) {
     label: cleanText(raw.label, TITLE_MAX),
     nt: cleanText(raw.nt, TITLE_MAX),
     vol: clamp(raw.vol, 0, 1, 1),
+    ...(clamp(raw.xf, 0, 12, 0) > 0 ? { xf: clamp(raw.xf, 0, 12, 0) } : {}),
   };
 }
 
@@ -208,6 +211,21 @@ export function musicAdvance(state, lib, gmNow, rand = Math.random, direction = 
   const len = list.tracks.length;
   const i = direction < 0 ? (m.i - 1 + len) % len : nextIndex(len, m.i, lib.shuffle, rand);
   return musicStart(state, lib, list.id, i, gmNow);
+}
+
+// The next track, started while this one still has `seconds` to run, so the two
+// overlap. Only an audio file is crossfaded out: a video fading under the next one
+// would need a second video tile, and a playlist inside one player moves on alone.
+export function crossfadeDue(music, time, duration, seconds) {
+  if (!music || music.paused !== null || !(seconds > 0) || music.track.k !== "a") return false;
+  if (!Number.isFinite(time) || !Number.isFinite(duration) || duration < seconds * 3) return false;
+  return duration - time <= seconds;
+}
+
+export function musicCrossfade(state, lib, gmNow, rand = Math.random) {
+  const next = musicAdvance(state, lib, gmNow, rand);
+  if (next.error) return next;
+  return done({ ...next.state, music: { ...next.state.music, xf: clamp(lib.crossfade, 0, 12, 0) } });
 }
 
 export function musicPause(state, gmNow) {
