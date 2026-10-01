@@ -10,7 +10,7 @@ a scene for initiative (and the music it interrupted, back afterwards), a sting 
 Threat rises, a sound for a critical or a complication. Without D&M it is a complete
 radio on its own.
 
-Version **1.3**. Played once in a real room (1.1B); what that found is fixed in 1.2. See *Live checks* below.
+Version **1.4**. Played once in a real room (1.1B); what that found is fixed in 1.2. See *Live checks* below.
 
 **Install:** in Owlbear, add `https://gsgrimoire.github.io/obr-radio/manifest.json`.
 
@@ -53,7 +53,8 @@ reaction is filled in only where you have not chosen a sound.
 | Battle & adventure | 33 soundboard sounds on three pages: Combat, Creatures, World |
 | Places & weather | 13 ambience loops (nature, weather, places), 9 hour-long YouTube ambiences (taverns, dungeons, caves, battles, machine ruins), a tavern-music playlist, and 10 scenes built from them |
 | Dice & Dreams and Machines | 8 short cues for success, failure, critical, complication, Threat, Momentum, initiative and rests — and the matching reactions |
-| GS Grimoire music | the GS Grimoire free songs playlist, and Liquid Banjo |
+| Dreams & Machines: ruins | 41 effects (Machines, Ruins, Weapons & tech, Terminals, Dreams), 22 ambience loops (Wastes, Machine places, Dream places), three playlists of GS Grimoire's own D&M music (the waste, action, dreams), and 10 scenes, some with sounds that come now and then |
+| GS Grimoire music | every public Free Song Sunday track from Suno (36), the YouTube playlist, and Liquid Banjo |
 
 The files are hosted with the radio (`sounds/`), so every player streams them from
 one place. **Every hosted file is CC0, CC BY or public domain — nothing
@@ -68,6 +69,15 @@ Freesound and SoundBible recordings made to loop by the Blanket and AmbientSound
 projects, whose per-sound licences these follow. A sound collection that did not
 record each sound's licence was left out rather than guessed at. The YouTube
 ambiences are not hosted: they play through YouTube's own player.
+
+The Dreams & Machines pack (1.4) is built by a script, so its credits are a record
+rather than a recollection. `tools/dnm-sources.json` names each file's source;
+`python3 tools/sounds.py <kenney zips>` opens each Freesound sound's own page,
+reads the licence there, refuses anything but CC0 or CC BY, cuts and loops and
+levels it, and writes `tools/dnm-sources.lock.json` (author, page, licence and
+what was changed), from which `tools/lock-to-js.py` writes `packs-dnm.js`. 61 of
+its files are CC0, 2 are CC BY. Everything searched for, used or not, is logged
+with its link and licence in `sounds/FOUND.md`, for crediting and for next time.
 
 ### What can go in a playlist
 
@@ -244,6 +254,12 @@ bar, and follows a real pop-up for the popped-out window.
 
 ## Releases
 
+- **1.4**: the Dreams & Machines pack: 63 CC0 and CC BY files for a
+  post-apocalyptic, machine-haunted world, ten scenes, and three playlists of GS
+  Grimoire's own D&M music. The GS Grimoire music pack gains every public Free
+  Song Sunday track. Pack scenes can scatter sounds now and then. The credits page
+  groups by pack and shows what was changed in every file, and Settings links to
+  it. A library holds up to 300 sounds (was 120).
 - **1.3**: crossfading between music tracks (Settings: 0–12 seconds); pads for
   players — the GM opens one soundboard page, and players press it from their
   Radio panel, heard by everyone. Spotify and Patreon examined and set aside: see

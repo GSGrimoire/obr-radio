@@ -5,7 +5,7 @@ import {
 } from "../sources.js";
 import {
   readLibrary, parseSoundList, formatSoundList, soundPages, MAX_TRACKS, MAX_LAYERS, emptyLibrary,
-  playerPadList, readPadList, MAX_PLAYER_PADS,
+  playerPadList, readPadList, MAX_PLAYER_PADS, MAX_SOUNDS,
 } from "../library.js";
 import {
   emptyState, readState, writeState, musicStart, musicAdvance, musicPause, musicResume, musicStop,
@@ -19,7 +19,7 @@ import {
 } from "../link.js";
 import { readPrefs, barPopover, barSize, STATE_KEY } from "../radio.js";
 import { PACKS, PACK_BASE, addPack, packInstalled, credits } from "../packs.js";
-import { readdirSync, existsSync } from "fs";
+import { readdirSync, existsSync, readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import path from "path";
 
@@ -488,7 +488,19 @@ const YT = (v) => ({ k: "yt", v, t: "video " + v });
   ok("the video beds are YouTube, the files are audio from this site",
     lib.sounds.filter((s) => s.page === "Video beds").every((s) => s.track.k === "yt")
       && lib.sounds.filter((s) => s.page !== "Video beds").every((s) => s.track.k === "a" && s.track.u.startsWith(PACK_BASE)));
-  ok("scenes arrive with their layers", lib.scenes.length === 10 && lib.scenes.every((s) => s.amb.length >= 1));
+  ok(`scenes arrive with their layers (${lib.scenes.length})`, lib.scenes.length === 20 && lib.scenes.every((s) => s.amb.length >= 1));
+  // 1.4: the Dreams & Machines pack.
+  ok(`every pack sound fits one library (${lib.sounds.length} of ${MAX_SOUNDS})`, lib.sounds.length <= MAX_SOUNDS);
+  const attack = lib.scenes.find((s) => s.name === "Machine attack");
+  ok("a scene can scatter a sound now and then", attack.amb.filter((l) => l.mode === "scatter").length === 2
+    && attack.amb.every((l) => l.mode === "loop" || (l.min >= 10 && l.max >= l.min)));
+  ok("the D&M scenes play GS Grimoire's own D&M playlists", attack.music.list === lib.lists.find((l) => l.name === "D&M: action").id);
+  const fss = lib.lists.find((l) => l.name === "Free Song Sunday");
+  ok(`the Free Song Sunday list streams from Suno (${fss.tracks.length} tracks)`, fss.tracks.length >= 30
+    && fss.tracks.every((t) => /^https:\/\/cdn1\.suno\.ai\/[0-9a-f-]{36}\.mp4$/.test(t.u)));
+  const lock = JSON.parse(readFileSync(path.join(repo, "tools", "dnm-sources.lock.json"), "utf8"));
+  ok(`every D&M file has the licence read from its own page (${lock.length})`, lock.every((f) => /^(CC0|CC BY [0-9.]+)$/.test(f.license) && f.url && f.author && f.changes));
+  ok("and the pack credits exactly those files", lock.every((f) => rows.some((r) => r.file === f.out && r.credit.url === f.url && r.credit.licenseUrl === f.licenseUrl)));
   ok("the tavern scene plays the tavern playlist", lib.scenes.find((s) => s.name === "Tavern").music.list === lib.lists.find((l) => l.name === "Tavern music").id);
   ok("the dungeon scene stops the music", lib.scenes.find((s) => s.name === "Dungeon").music.mode === "stop");
   ok("every scene fits the room: at most one video, at most four layers",

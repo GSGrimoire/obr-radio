@@ -27,3 +27,7 @@ and the live-checks list is what the suites cannot see. ROADMAP.md is the plan.
   for CC BY). Never NonCommercial, never NoDerivatives, never a source that does not
   record each file's licence. `radio.test.mjs` enforces all of that and fails on an
   unused file in `sounds/`.
+- The Dreams & Machines pack's files are built, not hand-placed: edit
+  `tools/dnm-sources.json`, run `tools/sounds.py` (reads each licence from the
+  sound's own page) then `tools/lock-to-js.py`. Never edit `packs-dnm.js` by hand.
+  Log every source you look at in `sounds/FOUND.md`, used or not.

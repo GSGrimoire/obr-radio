@@ -18,7 +18,7 @@ import { CUE_NAMES } from "./reactions.js";
 
 export const MAX_TRACKS = 200;
 export const MAX_LISTS = 30;
-export const MAX_SOUNDS = 120;
+export const MAX_SOUNDS = 300;
 export const MAX_SCENES = 40;
 export const MAX_LAYERS = 4;     // ambience layers playing at once; see state.js for why
 export const NAME_MAX = 40;

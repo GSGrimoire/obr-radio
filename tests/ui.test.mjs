@@ -790,14 +790,14 @@ const DNM = { threat: 0, momentum: 2, initiative: null, epochs: { breather: 0, b
   await con.click('button[data-tab="library"]');
   await sleep(300);
   const packNames = await con.$$eval("#c-packs .pack strong", (n) => n.map((x) => x.textContent));
-  ok(`packs: four starter packs are offered (${packNames.join(", ")})`, packNames.length === 4);
+  ok(`packs: five starter packs are offered (${packNames.join(", ")})`, packNames.length === 5);
   for (const name of packNames) {
     await con.click(`#c-packs .pack:has(strong:text-is("${name}")) button`);
     await sleep(500);
   }
   const lib = await bar.evaluate((k) => JSON.parse(localStorage.getItem(k)), LIBRARY_KEY);
   ok(`packs: added through the console, kept by the bar (${lib.sounds.length} sounds, ${lib.scenes.length} scenes, ${lib.lists.length} playlists)`,
-    lib.sounds.length > 60 && lib.scenes.length === 10 && lib.lists.length === 2);
+    lib.sounds.length > 120 && lib.scenes.length === 20 && lib.lists.length === 6);
   ok("packs: every button now says Added", (await con.$$eval("#c-packs .pack button", (n) => n.map((b) => b.textContent))).every((t) => t === "Added"));
   ok("packs: reactions were filled in", !!lib.reactions.rollSuccess && !!lib.reactions.combatStart);
 

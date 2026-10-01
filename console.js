@@ -632,6 +632,8 @@ function renderSettings() {
     options(h("select", { "aria-label": "Page players may press",
       onchange: (ev) => call("lib.set", { key: "playerPads", value: { ...lib.playerPads, page: ev.target.value } }) }),
       [["", "— choose —"], ...soundPages(lib).map((p) => [p, p])], lib.playerPads.page),
+    h("p", { class: "muted small" }, "The starter packs are made from other people's free sounds: ",
+      h("a", { href: "credits.html", target: "_blank", rel: "noopener", text: "see the credits" }), "."),
     h("p", { class: "muted small", text: POPOUT
       ? "This window is a remote control for the radio bar in Owlbear. Close it any time; the sound carries on."
       : "Want the soundboard on another screen? Press ⧉ on the radio bar to open this console in its own window." }),

@@ -17,10 +17,12 @@
 <div class="panel">
   <h1>GS Grimoire Radio — credits</h1>
   <p>The starter packs are built from free sounds made by other people. Thank you to every one of them.
-    Every file hosted with the radio is CC0, CC BY or public domain. CC BY files were changed only to make them loop, by the projects named.</p>
-  <p class="note">Hour-long ambiences and music from YouTube are not hosted here: they play through YouTube's own player, which shows the channel.</p>
+    Every file hosted with the radio is CC0, CC BY or public domain, and each links to the page it came from.
+    Under each source is what was done to the file: cut, made to loop, levelled. Nothing else was changed.</p>
+  <p class="note">Music from Suno and YouTube is not hosted here: it plays through Suno's or YouTube's own player, from the artist's own page.</p>
+  <p id="summary" class="note"></p>
   <table>
-    <thead><tr><th>Sound</th><th>From</th><th>By</th><th>Licence</th></tr></thead>
+    <thead><tr><th>Sound</th><th>From, and what was changed</th><th>By</th><th>Licence</th></tr></thead>
     <tbody id="rows"></tbody>
   </table>
 </div>
@@ -29,7 +31,23 @@
   const rows = document.getElementById("rows");
   const cell = (...kids) => { const td = document.createElement("td"); td.append(...kids); return td; };
   const link = (href, text) => { const a = document.createElement("a"); a.href = href; a.textContent = text; a.rel = "noopener"; return a; };
-  for (const r of credits()) {
+  const all = credits();
+  const hosted = all.filter((r) => r.credit);
+  document.getElementById("summary").textContent = `${hosted.length} hosted files: `
+    + ["CC0", "CC BY", "Public domain"].map((l) => `${hosted.filter((r) => r.credit.license === l).length} ${l}`).join(", ")
+    + `. ${all.length - hosted.length} tracks and videos played from their own sites.`;
+  let pack = "";
+  for (const r of all) {
+    if (r.pack !== pack) {
+      pack = r.pack;
+      const head = document.createElement("tr");
+      const th = document.createElement("th");
+      th.colSpan = 4;
+      th.textContent = pack;
+      th.style.paddingTop = "14px";
+      head.append(th);
+      rows.append(head);
+    }
     const tr = document.createElement("tr");
     const c = r.credit;
     if (c) {
