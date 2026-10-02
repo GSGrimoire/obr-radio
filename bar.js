@@ -28,7 +28,7 @@ import {
   CORNERS, RADIO_VERSION, readPrefs, barPopover, barSize,
 } from "./radio.js";
 import { readTrack, trackKey, isEmbed, isSet } from "./sources.js";
-import { readLibrary, findSound, findScene, newId, playerPadList, readPadList } from "./library.js";
+import { readLibrary, findSound, findScene, newId, playerPadList, readPadList, MAX_SOUNDS } from "./library.js";
 import * as S from "./state.js";
 import { diffDnm, planReaction, dnmPresent, CUE_NAMES } from "./reactions.js";
 import {
@@ -687,6 +687,27 @@ async function runCommand(cmd) {
       if (!["shuffle", "autoScenes", "fadeSeconds", "crossfade", "playerPads"].includes(key)) return { error: "Unknown setting." };
       return putLibrary({ ...lib, [key]: args.value });
     }
+    case "sound.set": {
+      const id = String(args.id || "");
+      const found = findSound(lib, id);
+      if (!found) return { error: "That sound is gone." };
+      const sounds = args.remove ? lib.sounds.filter((x) => x.id !== id)
+        : lib.sounds.map((x) => (x.id !== id ? x : {
+          ...x,
+          name: typeof args.name === "string" && args.name.trim() ? args.name : x.name,
+          vol: Number.isFinite(Number(args.vol)) && args.vol !== null && args.vol !== undefined ? Number(args.vol) : x.vol,
+          page: typeof args.page === "string" && args.page.trim() ? args.page : x.page,
+        }));
+      return putLibrary({ ...lib, sounds });
+    }
+    case "sound.add": {
+      if (lib.sounds.length >= MAX_SOUNDS) return { error: `The library holds ${MAX_SOUNDS} sounds. Delete one first.` };
+      const raw = args.sound && typeof args.sound === "object" ? args.sound : {};
+      const before = lib.sounds.length;
+      const r = putLibrary({ ...lib, sounds: [...lib.sounds, { ...raw, id: newId("s") }] });
+      if (!r.error && lib.sounds.length === before) return { error: "That cannot be a sound. A whole playlist cannot be pressed." };
+      return r;
+    }
     case "react.set": {
       // One reaction, likewise: changing three in a row must not lose the first two.
       const cue = String(args.cue || "");
@@ -811,8 +832,11 @@ function render() {
   tuneBtn.hidden = tuned;
   document.body.classList.toggle("tuned", tuned);
   document.body.classList.toggle("gm", isGM());
-  el("toggle").textContent = m && m.paused === null ? "❚❚" : "▶";
-  el("mute").textContent = prefs.mute ? "🔇" : "🔊";
+  // The record turns while this bar is playing music.
+  const playing = !!(m && m.paused === null);
+  document.body.classList.toggle("playing", playing);
+  el("record").classList.toggle("spin", tuned && playing && !prefs.mute);
+  el("toggle").setAttribute("aria-label", playing ? "Pause the music" : "Play the music");
   el("mute").setAttribute("aria-pressed", String(prefs.mute));
 }
 

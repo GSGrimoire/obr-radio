@@ -16,7 +16,7 @@
 import {
   NS, command, isFromBar, channelName, LINK_OBR_CHANNEL, stamp, toPieces, makeAssembler, makeDeduper,
 } from "./link.js";
-import { parseTrackList, formatTrackList, parseAny, isEmbed, KINDS } from "./sources.js";
+import { parseTrackList, formatTrackList, parseAny, isEmbed, KINDS, trackLink } from "./sources.js";
 import {
   readLibrary, parseSoundList, formatSoundList, soundPages, newId, findScene, MAX_LAYERS, CROSSFADE_MAX, readPadList,
 } from "./library.js";
@@ -179,7 +179,8 @@ function renderHeader() {
   for (const t of document.querySelectorAll(".tab")) {
     if (!gm && t.dataset.panel !== "play") t.hidden = true;
   }
-  for (const id of ["c-music", "c-amb", "c-scenes", "c-board"]) $(id).hidden = !gm;
+  for (const id of ["c-music", "c-amb", "c-scenes", "c-board", "c-searchbar"]) $(id).hidden = !gm;
+  document.body.classList.toggle("gm", gm);
   $("c-ppads").hidden = gm || !connected() || !readPadList(model.info.pads).length;
   // Your own volume belongs with the playing, not above the GM's library editors.
   $("c-me").hidden = gm && tab !== "play";
@@ -201,15 +202,107 @@ function renderMe() {
   const p = model.prefs;
   for (const [id, key] of [["c-v-music", "music"], ["c-v-amb", "amb"], ["c-v-fx", "fx"]]) {
     if (document.activeElement !== $(id)) $(id).value = String(Math.round(p[key] * 100));
+    setKnob($(id).parentElement, Number($(id).value) / 100);
+    $(id).parentElement.classList.toggle("off", p.mute);
   }
-  $("c-mute").textContent = p.mute ? "Unmute" : "Mute";
   $("c-mute").setAttribute("aria-pressed", String(p.mute));
+  $("c-me-record").classList.toggle("spin", !!(m && m.paused === null && model.tuned && !p.mute));
 }
 
 for (const [id, key] of [["c-v-music", "music"], ["c-v-amb", "amb"], ["c-v-fx", "fx"]]) {
   $(id).addEventListener("input", (ev) => call("prefs.set", { [key]: Number(ev.target.value) / 100 }));
 }
 $("c-mute").addEventListener("click", () => model && call("prefs.set", { mute: !model.prefs.mute }));
+
+// -------------------------------------------------------------
+// Brass and bakelite: icons and knobs, built without HTML strings
+// -------------------------------------------------------------
+const SVGNS = "http://www.w3.org/2000/svg";
+function svg(tag, attrs = {}, ...kids) {
+  const node = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  for (const kid of kids.flat()) if (kid) node.append(kid);
+  return node;
+}
+const ICONS = {
+  play: () => [svg("path", { d: "M8 5l11 7-11 7z", fill: "currentColor" })],
+  pause: () => [svg("rect", { x: 6, y: 5, width: 4, height: 14, rx: 1, fill: "currentColor" }), svg("rect", { x: 14, y: 5, width: 4, height: 14, rx: 1, fill: "currentColor" })],
+  prev: () => [svg("path", { d: "M6 5v14M19 6l-9 6 9 6z", fill: "none", stroke: "currentColor", "stroke-width": 2.4, "stroke-linecap": "round", "stroke-linejoin": "round" })],
+  next: () => [svg("path", { d: "M18 5v14M5 6l9 6-9 6z", fill: "none", stroke: "currentColor", "stroke-width": 2.4, "stroke-linecap": "round", "stroke-linejoin": "round" })],
+  stop: () => [svg("rect", { x: 5, y: 5, width: 14, height: 14, rx: 2, fill: "currentColor" })],
+  x: () => [svg("path", { d: "M6 6l12 12M18 6L6 18", fill: "none", stroke: "currentColor", "stroke-width": 2.6, "stroke-linecap": "round" })],
+  more: () => [5, 12, 19].map((cx) => svg("circle", { cx, cy: 12, r: 2, fill: "currentColor" })),
+  chev: () => [svg("path", { d: "M6 15l6-6 6 6", fill: "none", stroke: "currentColor", "stroke-width": 2.4, "stroke-linecap": "round", "stroke-linejoin": "round" })],
+};
+function icon(name, size = 14) {
+  return svg("svg", { width: size, height: size, viewBox: "0 0 24 24", "aria-hidden": "true" }, ICONS[name]());
+}
+
+function setKnob(knobEl, v) {
+  knobEl.style.setProperty("--a", (-135 + Math.max(0, Math.min(1, v)) * 270) + "deg");
+}
+// A brass knob over a real, invisible range input (see style.css): drag across it,
+// or use the arrow keys. `onchange` fires when it is let go.
+function knob(value, { label, size = 44, off = false, onchange, oninput }) {
+  const face = svg("svg", { width: size, height: size, viewBox: "0 0 56 56", "aria-hidden": "true" },
+    svg("path", { d: "M9.6 46.4 A26 26 0 1 1 46.4 46.4", fill: "none", stroke: "#e8dcbf", "stroke-width": 2, "stroke-dasharray": "1.5 4.2" }),
+    svg("circle", { cx: 28, cy: 28, r: 20, fill: "#2a120c", stroke: "#6b4c1c", "stroke-width": 1.5 }),
+    svg("circle", { class: "cap", cx: 28, cy: 28, r: 16, fill: "#b8903f", stroke: "#6b4c1c" }),
+    svg("circle", { cx: 24, cy: 23, r: 6, fill: "#f2d88f", opacity: ".35" }),
+    svg("g", { class: "pointer" }, svg("line", { x1: 28, y1: 27, x2: 28, y2: 14, stroke: "#22110b", "stroke-width": 3.4, "stroke-linecap": "round" })));
+  const wrap = h("span", { class: "knob" + (off ? " off" : "") }, face);
+  const input = h("input", { type: "range", min: 0, max: 100, value: String(Math.round(value * 100)), "aria-label": label, title: label,
+    oninput: (ev) => { setKnob(wrap, Number(ev.target.value) / 100); if (oninput) oninput(Number(ev.target.value) / 100); },
+    onchange: (ev) => onchange && onchange(Number(ev.target.value) / 100) });
+  wrap.append(input);
+  setKnob(wrap, value);
+  return wrap;
+}
+for (const k of document.querySelectorAll("[data-knob]")) {
+  const input = k.querySelector("input");
+  input.addEventListener("input", () => setKnob(k, Number(input.value) / 100));
+}
+
+// -------------------------------------------------------------
+// Search: one box over the pads, the layers to add, the shelf and the lists
+// -------------------------------------------------------------
+let query = "";
+const norm = (s) => String(s || "").toLowerCase();
+const matches = (...texts) => !query || texts.some((t) => norm(t).includes(query));
+$("c-search").addEventListener("input", (ev) => { query = norm(ev.target.value).trim(); renderPlay(); });
+$("c-search").addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") { ev.target.value = ""; query = ""; renderPlay(); }
+  if (ev.key === "Enter") { ev.preventDefault(); firePad(0); }
+});
+let libQuery = "";
+$("c-lib-search").addEventListener("input", (ev) => {
+  libQuery = norm(ev.target.value).trim();
+  if (model && model.lib) { section("c-sounds", renderSounds); section("c-lists", renderLists); section("c-scene-list", renderSceneList); }
+});
+// "/" finds, 1–9 fire the pads in view: while nobody is typing, on the Play tab.
+document.addEventListener("keydown", (ev) => {
+  if (!model || model.role !== "GM" || tab !== "play" || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+  const t = document.activeElement;
+  if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName) && t.type !== "range") return;
+  if (ev.key === "/") { ev.preventDefault(); $("c-search").focus(); return; }
+  if (/^[1-9]$/.test(ev.key)) { ev.preventDefault(); firePad(Number(ev.key) - 1); }
+});
+let padsInView = [];
+function firePad(i) {
+  const s = padsInView[i];
+  if (!s || s.track.k !== "a") return;
+  const b = [...document.querySelectorAll("#c-board .pad")].find((x) => x.dataset.id === s.id);
+  if (b) { b.classList.add("hit"); setTimeout(() => b.classList.remove("hit"), 250); }
+  call("sound.fire", { id: s.id });
+}
+function renderPlay() {
+  if (!connected() || model.role !== "GM" || !model.lib) return;
+  section("c-music", renderMusic);
+  section("c-amb", renderAmb);
+  section("c-scenes", renderScenes);
+  section("c-board", renderBoard);
+}
+let drawerOpen = (() => { try { return localStorage.getItem("gsradio.drawer") !== "closed"; } catch (err) { return true; } })();
 
 // -------------------------------------------------------------
 // Play: music
@@ -219,25 +312,31 @@ let pickedList = "";
 function renderMusic() {
   const { lib, state } = model;
   const m = state.music;
+  const lists = lib.lists.filter((l) => matches(l.name, ...l.tracks.map((t) => t.t)));
   if (!pickedList || !lib.lists.some((l) => l.id === pickedList)) pickedList = (m && m.list) || (lib.lists[0] && lib.lists[0].id) || "";
+  const shown = lists.some((l) => l.id === pickedList) ? lists : lib.lists.filter((l) => l.id === pickedList).concat(lists);
   const pick = options(h("select", { "aria-label": "Playlist", onchange: (ev) => { pickedList = ev.target.value; } }),
-    lib.lists.map((l) => [l.id, `${l.name} (${l.tracks.length})`]), pickedList);
+    shown.map((l) => [l.id, `${l.name} (${l.tracks.length})`]), pickedList);
+  const playing = !!(m && m.paused === null);
+  const sceneName = state.scene || (m ? m.label || "Music" : "Nothing on");
+  const line = m ? displayTitle(m) + (m.label && state.scene ? " · " + m.label : "") + (m.paused !== null ? " · paused" : "")
+    : state.amb.length ? "Ambience only" : "Press a record on the shelf, or play a list.";
   return [
-    h("h2", { text: "Music" }),
-    h("div", { class: "now-line" },
-      h("strong", { text: m ? displayTitle(m) : "Nothing playing" }),
-      m ? h("span", { class: "muted", text: " · " + (m.label || "") + (m.paused !== null ? " · paused" : "") }) : null),
-    h("div", { class: "row" },
-      h("button", { title: "Previous", "aria-label": "Previous", onclick: () => call("music.prev") }, "⏮"),
-      h("button", { class: "primary", onclick: () => call("music.toggle") }, m && m.paused === null ? "❚❚ Pause" : "▶ Play"),
-      h("button", { title: "Next", "aria-label": "Next", onclick: () => call("music.next") }, "⏭"),
-      h("button", { title: "Stop the music", onclick: () => call("music.stop") }, "■"),
-      m ? h("label", { class: "inline" }, "Level ",
-        h("input", { type: "range", min: 0, max: 100, value: String(Math.round(m.vol * 100)),
-          title: "The music's level for everyone", onchange: (ev) => call("music.vol", { v: Number(ev.target.value) / 100 }) })) : null),
-    lib.lists.length
-      ? h("div", { class: "row" }, pick, h("button", { onclick: () => pickedList && call("music.play", { list: pickedList }) }, "Play this list"))
-      : h("p", { class: "muted", text: "No playlists yet. Make one in Library, or add the GS Grimoire music starter pack there." }),
+    h("div", { class: "platter-top" },
+      h("div", { class: "record" + (playing && model.tuned ? " spin" : ""), "aria-hidden": "true" }, h("div", { class: "label" })),
+      h("div", { class: "platter-now" },
+        h("span", { class: "muted small", text: "On the platter" }),
+        h("span", { class: "scene-name", text: sceneName }),
+        h("span", { class: "track-line", text: line, title: line })),
+      m ? knob(m.vol, { label: "The music's level for everyone", size: 46, onchange: (v) => call("music.vol", { v }) }) : null),
+    h("div", { class: "list-row" },
+      h("div", { class: "transport" },
+        h("button", { class: "brass round", title: "Previous", "aria-label": "Previous", onclick: () => call("music.prev") }, icon("prev")),
+        h("button", { class: "primary round big", "aria-label": playing ? "Pause the music" : "Play the music", title: playing ? "Pause" : "Play", onclick: () => call("music.toggle") }, icon(playing ? "pause" : "play", 18)),
+        h("button", { class: "brass round", title: "Next", "aria-label": "Next", onclick: () => call("music.next") }, icon("next")),
+        h("button", { class: "brass round", title: "Stop the music", "aria-label": "Stop the music", onclick: () => call("music.stop") }, icon("stop", 12))),
+      lib.lists.length ? pick : h("span", { class: "muted small", text: "No playlists yet: add the GS Grimoire music pack in Library, or make one." }),
+      lib.lists.length ? h("button", { onclick: () => pickedList && call("music.play", { list: pickedList }) }, "Play this list") : null),
   ];
 }
 
@@ -265,29 +364,17 @@ function renderAmb() {
   const rows = state.amb.map((l) => {
     const name = l.label || KINDS[l.track.k] || "Layer";
     return h("div", { class: "layer" + (l.off ? " off" : "") },
-      h("button", { class: "ghost", title: l.off ? "Play this layer" : "Pause this layer",
-        "aria-label": (l.off ? "Play " : "Pause ") + name, onclick: () => call("layer.pause", { id: l.id, off: !l.off }) }, l.off ? "▶" : "❚❚"),
+      knob(l.vol, { label: name + " level", size: 32, off: l.off, onchange: (v) => call("layer.vol", { id: l.id, v }) }),
       h("span", { class: "layer-name", text: name, title: KINDS[l.track.k] }),
       h("span", { class: "badge", text: l.off ? "paused" : l.mode === "scatter" ? `every ${l.min}–${l.max}s` : "loop" }),
-      h("input", { type: "range", min: 0, max: 100, value: String(Math.round(l.vol * 100)), "aria-label": name + " level",
-        onchange: (ev) => call("layer.vol", { id: l.id, v: Number(ev.target.value) / 100 }) }),
-      h("button", { class: "ghost", title: "Stop this layer", "aria-label": "Stop " + name, onclick: () => call("layer.remove", { id: l.id }) }, "×"));
+      h("button", { title: l.off ? "Play this layer" : "Pause this layer",
+        "aria-label": (l.off ? "Play " : "Pause ") + name, onclick: () => call("layer.pause", { id: l.id, off: !l.off }) }, icon(l.off ? "play" : "pause", 11)),
+      h("button", { title: "Stop this layer", "aria-label": "Stop " + name, onclick: () => call("layer.remove", { id: l.id }) }, icon("x", 10)));
   });
 
-  const sel = soundOptions(lib, (s) => layerDraft.mode === "loop" || !isEmbed(s.track));
+  const sel = soundOptions(lib, (s) => (layerDraft.mode === "loop" || !isEmbed(s.track)) && matches(s.name, s.page));
   sel.value = layerDraft.sound;
   sel.addEventListener("change", (ev) => { layerDraft.sound = ev.target.value; });
-  const link = h("input", { type: "text", placeholder: "…or paste a link", value: layerDraft.link,
-    oninput: (ev) => { layerDraft.link = ev.target.value; },
-    onkeydown: (ev) => { if (ev.key === "Enter") add(); } });
-  const mode = options(h("select", { "aria-label": "How it plays", onchange: (ev) => { layerDraft.mode = ev.target.value; section("c-amb", renderAmb); } }),
-    [["loop", "Loop"], ["scatter", "Now and then"]], layerDraft.mode);
-  const interval = layerDraft.mode === "scatter" ? h("span", { class: "inline" }, "every ",
-    h("input", { type: "number", min: 3, max: 600, value: String(layerDraft.min), class: "num", "aria-label": "Shortest wait in seconds",
-      oninput: (ev) => { layerDraft.min = Number(ev.target.value); } }), "–",
-    h("input", { type: "number", min: 3, max: 900, value: String(layerDraft.max), class: "num", "aria-label": "Longest wait in seconds",
-      oninput: (ev) => { layerDraft.max = Number(ev.target.value); } }), " s") : null;
-
   const add = async () => {
     let args = { mode: layerDraft.mode, min: layerDraft.min, max: layerDraft.max };
     if (layerDraft.link.trim()) {
@@ -303,15 +390,26 @@ function renderAmb() {
     const r = await call("layer.add", args);
     if (!r.error) { layerDraft = { ...layerDraft, link: "" }; section("c-amb", renderAmb); }
   };
+  const link = h("input", { type: "text", placeholder: "…or paste a link", value: layerDraft.link,
+    oninput: (ev) => { layerDraft.link = ev.target.value; },
+    onkeydown: (ev) => { if (ev.key === "Enter") add(); } });
+  const mode = options(h("select", { "aria-label": "How it plays", onchange: (ev) => { layerDraft.mode = ev.target.value; section("c-amb", renderAmb); } }),
+    [["loop", "Loop"], ["scatter", "Now and then"]], layerDraft.mode);
+  const interval = layerDraft.mode === "scatter" ? h("span", { class: "inline" }, "every ",
+    h("input", { type: "number", min: 3, max: 600, value: String(layerDraft.min), class: "num", "aria-label": "Shortest wait in seconds",
+      oninput: (ev) => { layerDraft.min = Number(ev.target.value); } }), "–",
+    h("input", { type: "number", min: 3, max: 900, value: String(layerDraft.max), class: "num", "aria-label": "Longest wait in seconds",
+      oninput: (ev) => { layerDraft.max = Number(ev.target.value); } }), " s") : null;
 
   return [
-    h("h2", { text: `Ambience (${state.amb.length}/${MAX_LAYERS})` }),
-    rows.length ? h("div", { class: "layers" }, rows) : h("p", { class: "muted", text: "Nothing layered. Rain, a crowd, a fire — they play under the music." }),
-    state.amb.length < MAX_LAYERS ? h("div", { class: "row" }, sel, mode) : null,
-    state.amb.length < MAX_LAYERS ? h("div", { class: "row" }, link, interval, h("button", { class: "primary", onclick: add }, "Add")) : null,
-    state.amb.length ? h("button", { class: "ghost small", onclick: () => call("layer.clear") }, "Stop all ambience") : null,
+    h("div", { class: "drawer-head" },
+      h("h2", { class: "sec-title", text: `Layers (${state.amb.length}/${MAX_LAYERS})` }),
+      h("span", { class: "spacer" }),
+      state.amb.length ? h("button", { class: "ghost small", onclick: () => call("layer.clear") }, "Stop all ambience") : null),
+    rows.length ? h("div", { class: "layers" }, rows) : h("p", { class: "muted small", text: "Nothing layered. Rain, a crowd, a machine's hum: they play under the music." }),
+    state.amb.length < MAX_LAYERS ? h("div", { class: "add-layer" }, sel, mode, link, interval, h("button", { class: "primary", onclick: add }, "Add")) : null,
+    query && state.amb.length < MAX_LAYERS ? h("p", { class: "muted small", text: `The sound list shows what matches "${query}".` }) : null,
     model.info.embeds >= MAX_EMBEDS ? h("p", { class: "muted small", text: `${MAX_EMBEDS} video players are showing, which is all the bar holds.` }) : null,
-    h("p", { class: "muted small", text: "Enter in the link box adds it." }),
   ];
 }
 
@@ -322,15 +420,22 @@ let sceneDraft = { name: "", keepMusic: false };
 
 function renderScenes() {
   const { lib, state } = model;
-  // The scene that is playing is pressed again to stop it.
-  const buttons = lib.scenes.map((s) => {
+  // Records on a shelf. The one playing has its record half out of the sleeve, and
+  // is pressed again to stop it.
+  const shown = lib.scenes.filter((s) => {
+    const l = lib.lists.find((x) => x.id === s.music.list);
+    return matches(s.name, l && l.name, ...s.amb.map((a) => a.label));
+  });
+  const sleeves = shown.map((s) => {
     const on = state.scene === s.name;
+    const sub = s.amb.map((a) => a.label).join(", ") || (s.music.mode === "list" ? "Music" : "");
     return h("button", {
       class: "scene" + (on ? " on" : ""),
+      style: `--hue:${hueFor(s.name)}`,
       "aria-pressed": String(on),
       title: (on ? "Playing — press to stop it\n" : "") + sceneSummary(s, lib),
       onclick: () => call(on ? "scene.stop" : "scene.recall", { id: s.id }),
-    }, s.name);
+    }, h("span", { class: "sleeve-name", text: s.name }), h("span", { class: "sleeve-sub", text: sub }));
   });
   const save = async () => {
     const name = sceneDraft.name.trim();
@@ -339,13 +444,15 @@ function renderScenes() {
     if (!r.error) { sceneDraft = { name: "", keepMusic: false }; toast(`Saved "${name}".`); }
   };
   return [
-    h("h2", { text: "Scenes" }),
-    buttons.length ? h("div", { class: "scenes" }, buttons) : h("p", { class: "muted", text: "A scene is a moment's sound: a playlist and its ambience, recalled in one press. Set up what should play, then save it here — or add the Places & weather starter pack for ten ready-made ones." }),
-    buttons.length ? h("p", { class: "muted small", text: "Press the lit scene again to stop it." }) : null,
-    h("div", { class: "row" },
+    h("div", { class: "drawer-head" },
+      h("h2", { class: "sec-title", text: "The shelf" }),
+      h("span", { class: "muted small", text: lib.scenes.length ? "Press a record to play its scene; press it again to stop." : "" })),
+    sleeves.length ? h("div", { class: "scenes" }, sleeves)
+      : h("p", { class: "muted small", text: lib.scenes.length ? `No scene matches "${query}".` : "A scene is a moment's sound: a playlist and its ambience, recalled in one press. Set up what should play, then save it here, or add a starter pack in Library." }),
+    h("div", { class: "save-scene" },
       h("input", { type: "text", maxlength: 40, placeholder: "Name what is playing now…", value: sceneDraft.name,
         oninput: (ev) => { sceneDraft.name = ev.target.value; }, onkeydown: (ev) => { if (ev.key === "Enter") save(); } }),
-      h("label", { class: "inline muted", title: "Without this, recalling the scene leaves the music alone" },
+      h("label", { class: "inline muted small", title: "Without this, recalling the scene leaves the music alone" },
         h("input", { type: "checkbox", checked: !sceneDraft.keepMusic, onchange: (ev) => { sceneDraft.keepMusic = !ev.target.checked; } }), " with its music"),
       h("button", { onclick: save }, "Save as scene")),
   ];
@@ -372,11 +479,15 @@ function renderBoard() {
   const { lib } = model;
   const pages = soundPages(lib);
   if (!pages.includes(boardPage)) boardPage = pages[0] || "";
-  const pads = lib.sounds.filter((s) => s.page === boardPage).map((s) => {
+  // Searching shows matches from every page; otherwise one page at a time.
+  const list = query ? lib.sounds.filter((s) => matches(s.name, s.page)) : lib.sounds.filter((s) => s.page === boardPage);
+  padsInView = list;
+  const pads = list.map((s, i) => {
     const playable = s.track.k === "a";
     return h("button", {
-      class: "pad", style: `--hue:${hueFor(s.page)}`, disabled: !playable,
-      title: playable ? `${s.name} — play for everyone` : `${s.name} is a video: add it as an ambience layer instead`,
+      class: "pad", disabled: !playable,
+      dataset: { id: s.id, sub: query ? s.page : i < 9 ? String(i + 1) : "" },
+      title: playable ? `${s.name} — play for everyone` : `${s.name} is a video: add it as a layer instead`,
       onclick: async (ev) => {
         const b = ev.currentTarget;
         b.classList.add("hit");
@@ -385,17 +496,31 @@ function renderBoard() {
       },
     }, s.name);
   });
+  const open = drawerOpen || !!query;
+  $("c-board").classList.toggle("closed", !open);
+  const toggle = () => {
+    drawerOpen = !open;
+    try { localStorage.setItem("gsradio.drawer", drawerOpen ? "open" : "closed"); } catch (err) { /* forgets */ }
+    section("c-board", renderBoard);
+    // Opened from the handle pinned at the bottom edge, it opens at the foot of the
+    // page: follow it there.
+    if (drawerOpen) $("c-board").scrollIntoView({ block: "start", behavior: "smooth" });
+  };
   return [
-    h("div", { class: "board-head" },
-      h("h2", { text: "Soundboard" }),
+    h("div", { class: "drawer-head" },
+      h("button", { class: "toggle", "aria-expanded": String(open), onclick: toggle },
+        h("h2", { class: "sec-title", text: "Soundboard" }),
+        h("span", { class: "chev" }, icon("chev", 16))),
+      h("span", { class: "muted small", text: query ? `${list.length} matching "${query}"` : open ? "Keys 1–9 play the first nine" : `${lib.sounds.length} sounds` }),
       h("span", { class: "spacer" }),
       h("button", { class: "ghost small", onclick: () => call("sound.stopAll"), title: "Stop every sound that is playing" }, "■ Stop sounds")),
-    pages.length > 1 ? h("div", { class: "pages" }, pages.map((p) => h("button", {
-      class: "page" + (p === boardPage ? " on" : ""), style: `--hue:${hueFor(p)}`,
-      onclick: () => { boardPage = p; section("c-board", renderBoard); },
-    }, p))) : null,
-    pads.length ? h("div", { class: "pads" }, pads)
-      : h("p", { class: "muted", text: "No sounds yet. Add a starter pack in Library, or your own in Library → Sounds: one line each, \"Name | link\"." }),
+    h("div", { class: "drawer-body" },
+      !query && pages.length > 1 ? h("div", { class: "pages" }, pages.map((p) => h("button", {
+        class: "page" + (p === boardPage ? " on" : ""), "aria-pressed": String(p === boardPage),
+        onclick: () => { boardPage = p; section("c-board", renderBoard); },
+      }, p))) : null,
+      pads.length ? h("div", { class: "pads" }, pads)
+        : h("p", { class: "muted", text: query ? `No sound matches "${query}".` : "No sounds yet. Add a starter pack in Library, or your own in Library → Sounds." })),
   ];
 }
 
@@ -451,8 +576,10 @@ function renderLists() {
   const list = lib.lists.find((l) => l.id === editList);
   if (!listDirty) listText = list ? formatTrackList(list.tracks) : "";
   const name = h("input", { type: "text", maxlength: 40, placeholder: "Playlist name", value: list ? list.name : "" });
+  // The library search narrows the choice to playlists whose name or tracks match.
+  const listed = lib.lists.filter((l) => l.id === editList || !libQuery || norm(l.name).includes(libQuery) || l.tracks.some((t) => norm(t.t).includes(libQuery)));
   const pick = options(h("select", { "aria-label": "Playlist", onchange: (ev) => { editList = ev.target.value; listDirty = false; listErrors = []; section("c-lists", renderLists); } }),
-    lib.lists.map((l) => [l.id, `${l.name} (${l.tracks.length})`]), editList);
+    listed.map((l) => [l.id, `${l.name} (${l.tracks.length})`]), editList);
   const text = h("textarea", { spellcheck: "false", wrap: "off", rows: 10, disabled: !list,
     placeholder: "https://youtube.com/playlist?list=…\nTavern | https://suno.com/song/…\nhttps://soundcloud.com/artist/track",
     oninput: (ev) => { listText = ev.target.value; listDirty = true; } });
@@ -493,12 +620,76 @@ function renderLists() {
 // -------------------------------------------------------------
 // Library: sounds
 // -------------------------------------------------------------
+let libPage = "";
+let openSound = "";
+let adding = false;
+let bulkOpen = false;
+let newSound = { name: "", link: "", page: "" };
 let soundsDirty = false;
 let soundsText = "";
 let soundsErrors = [];
 
 function renderSounds() {
   const { lib } = model;
+  const pages = soundPages(lib);
+  if (!pages.includes(libPage)) libPage = pages[0] || "";
+  const list = libQuery ? lib.sounds.filter((s) => norm(s.name).includes(libQuery) || norm(s.page).includes(libQuery))
+    : lib.sounds.filter((s) => s.page === libPage);
+  const pageList = h("datalist", { id: "c-page-names" }, pages.map((p) => h("option", { value: p })));
+
+  const drawers = h("div", { class: "drawers" },
+    h("span", { class: "sec-title", text: "Pages" }),
+    pages.map((p) => {
+      const n = lib.sounds.filter((s) => s.page === p).length;
+      return h("button", { class: "drawer-front" + (p === libPage && !libQuery ? " on" : ""), "aria-pressed": String(p === libPage && !libQuery),
+        onclick: () => { libPage = p; openSound = ""; section("c-sounds", renderSounds); } },
+      h("span", { class: "plate", text: p }), h("span", { class: "count", text: plural(n, "sound", "sounds") }));
+    }));
+
+  const cards = list.map((s) => {
+    const open = openSound === s.id;
+    const kind = s.track.k === "a" && /suno\.ai/.test(s.track.u) ? "Suno song" : KINDS[s.track.k] || "";
+    return h("div", { class: "sound-card" },
+      h("div", { class: "top" },
+        h("input", { type: "text", maxlength: 40, value: s.name, "aria-label": "Name",
+          onchange: (ev) => ev.target.value.trim() && call("sound.set", { id: s.id, name: ev.target.value.trim() }) }),
+        h("span", { class: "kind", text: libQuery ? `${kind} · ${s.page}` : kind }),
+        knob(s.vol, { label: `${s.name}: its own volume`, size: 30, onchange: (v) => call("sound.set", { id: s.id, vol: v }) }),
+        h("span", { class: "pct", text: Math.round(s.vol * 100) + "%" }),
+        s.track.k === "a" ? h("button", { class: "brass round", style: "width:30px;height:30px;min-height:0", "aria-label": `Hear ${s.name}, just for you`, title: "Hear it, just for you",
+          onclick: () => previewTrack(s.track, s.vol) }, icon("play", 11)) : null,
+        h("button", { class: "ghost", "aria-expanded": String(open), "aria-label": `More for ${s.name}`,
+          onclick: () => { openSound = open ? "" : s.id; section("c-sounds", renderSounds); } }, icon("more", 16))),
+      open ? h("div", { class: "more" },
+        h("span", { class: "link", text: trackLink(s.track) }),
+        h("label", {}, "Page ",
+          h("input", { type: "text", list: "c-page-names", maxlength: 40, value: s.page, "aria-label": "Page",
+            onchange: (ev) => ev.target.value.trim() && call("sound.set", { id: s.id, page: ev.target.value.trim() }).then((r) => { if (!r.error) { libPage = ev.target.value.trim(); } }) })),
+        h("div", { class: "row" }, h("span", { class: "spacer" }),
+          h("button", { class: "danger", onclick: (ev) => confirmTwice(ev.currentTarget, "Delete", () => call("sound.set", { id: s.id, remove: true })) }, "Delete"))) : null);
+  });
+
+  const addSound = async () => {
+    const found = parseAny(newSound.link);
+    if (!found || found.error || !found.tracks.length) { toast(found ? found.error : "Paste a link.", true); return; }
+    const track = found.tracks[0];
+    const name = newSound.name.trim() || track.t;
+    const page = newSound.page.trim() || libPage || "Sounds";
+    const r = await call("sound.add", { sound: { name, track, page, vol: 1 } });
+    if (!r.error) { newSound = { name: "", link: "", page }; libPage = page; adding = false; toast(`Added "${name}".`); section("c-sounds", renderSounds); }
+  };
+  const addForm = adding ? h("div", { class: "card", style: "margin:6px 0" },
+    h("div", { class: "row" },
+      h("input", { type: "text", placeholder: "Name", maxlength: 40, value: newSound.name, oninput: (ev) => { newSound.name = ev.target.value; } }),
+      h("input", { type: "text", placeholder: "Page", list: "c-page-names", maxlength: 40, value: newSound.page || libPage, oninput: (ev) => { newSound.page = ev.target.value; } })),
+    h("div", { class: "row" },
+      h("input", { type: "text", placeholder: "Link: audio file, Suno song, YouTube video…", value: newSound.link,
+        oninput: (ev) => { newSound.link = ev.target.value; }, onkeydown: (ev) => { if (ev.key === "Enter") addSound(); } }),
+      h("button", { class: "primary", onclick: addSound }, "Add"),
+      h("button", { class: "ghost", onclick: () => { adding = false; section("c-sounds", renderSounds); } }, "Cancel"))) : null;
+
+  // The whole collection as text, for pasting many at once. Open by itself when
+  // there is nothing yet to show as cards.
   if (!soundsDirty) soundsText = formatSoundList(lib.sounds);
   const text = h("textarea", { spellcheck: "false", wrap: "off", rows: 12,
     placeholder: "## Combat\nSword clash | https://…/sword.mp3\nWarhorn | https://suno.com/song/… | 60\n\n## Weather\nRain | https://youtu.be/…",
@@ -513,19 +704,41 @@ function renderSounds() {
     toast(errors.length ? `Saved ${sounds.length}. ${errors.length} line(s) could not be used.` : `Saved ${sounds.length} sounds.`);
     section("c-sounds", renderSounds);
   };
-  return [
-    h("h2", { text: `Sounds (${lib.sounds.length})` }),
-    h("p", { class: "muted small", text: "One sound per line, \"Name | link\". \"## Page\" starts a soundboard page. A number after a second bar is the sound's own volume: \"Horn | link | 60\". Audio files and Suno songs can be pressed on the soundboard; videos can be ambience layers." }),
+  const bulk = h("details", { class: "bulk", open: !lib.sounds.length || soundsDirty || bulkOpen,
+    ontoggle: (ev) => { bulkOpen = ev.target.open; } },
+    h("summary", { text: "Paste many… (the whole collection as text)" }),
+    h("p", { class: "muted small", text: "One sound per line, \"Name | link\". \"## Page\" starts a soundboard page. A number after a second bar is the sound's own volume: \"Horn | link | 60\". Audio files and Suno songs can be pressed on the soundboard; videos can be layers." }),
     text,
     soundsErrors.map((e) => h("div", { class: "error", text: `Line ${e.line}: ${e.error}` })),
     h("div", { class: "row" }, h("button", { class: "primary", onclick: save }, "Save sounds"),
       h("button", { onclick: () => preview(soundsText) }, "Hear the first"),
-      soundsDirty ? h("button", { class: "ghost", onclick: () => { soundsDirty = false; soundsErrors = []; section("c-sounds", renderSounds); } }, "Undo changes") : null),
+      soundsDirty ? h("button", { class: "ghost", onclick: () => { soundsDirty = false; soundsErrors = []; section("c-sounds", renderSounds); } }, "Undo changes") : null));
+
+  return [
+    h("h2", { text: `Sounds (${lib.sounds.length})` }),
+    pageList,
+    lib.sounds.length ? h("div", { class: "catalogue" },
+      libQuery ? null : drawers,
+      h("div", { class: "cards" },
+        h("div", { class: "drawer-head" },
+          h("span", { class: "sec-title", style: "margin:0", text: libQuery ? `Matching "${libQuery}"` : libPage }),
+          h("span", { class: "spacer" }),
+          h("button", { class: "brass", onclick: () => { adding = !adding; section("c-sounds", renderSounds); } }, "Add a sound")),
+        addForm,
+        cards.length ? cards : h("p", { class: "muted small", text: `Nothing matches "${libQuery}".` }))) : null,
+    bulk,
   ];
 }
 
 // Hearing a sound before saving it plays HERE, in this page, for you alone.
 let previewing = null;
+function previewTrack(track, vol = 1) {
+  if (previewing) previewing.pause();
+  previewing = new Audio(track.u);
+  previewing.volume = Math.max(0, Math.min(1, (model ? model.prefs.fx : 0.8) * vol));
+  previewing.play().catch(() => toast("That would not play.", true));
+  setTimeout(() => previewing && previewing.pause(), 8000);
+}
 function preview(text) {
   const first = String(text).split(/\r?\n/).map((l) => parseAny(l.replace(/\|\s*\d{1,3}\s*%?\s*$/, ""))).find((f) => f && f.tracks && f.tracks.length);
   const track = first && first.tracks[0];
@@ -542,7 +755,7 @@ function preview(text) {
 // -------------------------------------------------------------
 function renderSceneList() {
   const { lib } = model;
-  const rows = lib.scenes.map((s) => h("div", { class: "scene-row" },
+  const rows = lib.scenes.filter((s) => !libQuery || norm(s.name).includes(libQuery) || s.amb.some((a) => norm(a.label).includes(libQuery))).map((s) => h("div", { class: "scene-row" },
     h("div", {}, h("strong", { text: s.name }), h("div", { class: "muted small pre", text: sceneSummary(s, lib) })),
     h("div", { class: "row" },
       model.state.scene === s.name
@@ -695,7 +908,7 @@ function renderPlayerPads() {
     h("h2", { text: "Soundboard" }),
     h("p", { class: "muted small", text: "The GM has opened these to you. Everyone hears them." }),
     h("div", { class: "pads" }, pads.map((p) => h("button", {
-      class: "pad", style: "--hue:205",
+      class: "pad",
       onclick: async (ev) => {
         const b = ev.currentTarget;
         b.classList.add("hit");
@@ -714,12 +927,8 @@ function render() {
   if (model.role !== "GM" || !model.lib) return;
   if (model.info.error && model.info.error !== shownError) toast(model.info.error, true);
   shownError = model.info.error;
-  if (tab === "play") {
-    section("c-music", renderMusic);
-    section("c-amb", renderAmb);
-    section("c-scenes", renderScenes);
-    section("c-board", renderBoard);
-  } else if (tab === "library") {
+  if (tab === "play") renderPlay();
+  else if (tab === "library") {
     section("c-packs", renderPacks);
     section("c-lists", renderLists);
     section("c-sounds", renderSounds);

@@ -10,7 +10,7 @@ a scene for initiative (and the music it interrupted, back afterwards), a sting 
 Threat rises, a sound for a critical or a complication. Without D&M it is a complete
 radio on its own.
 
-Version **1.4**. Played once in a real room (1.1B); what that found is fixed in 1.2. See *Live checks* below.
+Version **1.5**. Played once in a real room (1.1B); what that found is fixed in 1.2. See *Live checks* below.
 
 **Install:** in Owlbear, add `https://gsgrimoire.github.io/obr-radio/manifest.json`.
 
@@ -124,6 +124,25 @@ are one-shot broadcasts from the GM's bar: nothing to sync, nothing to catch up 
 | `sdk.js` | the Owlbear SDK, vendored (the same bundle as `dnm-obr`) |
 
 ### Decisions, and why
+
+- **The look is a gramophone cabinet, laid out as a record shelf (1.5).** Chosen
+  from two mockups. Mahogany, brass and ivory; plates in IM Fell English, text in
+  Alegreya Sans (Google Fonts; the system fonts stand in if they cannot load).
+  The Play tab reads top to bottom as the GM uses it: what is on the platter, its
+  layers, the shelf of scenes, and the soundboard as a drawer that shuts to a
+  handle pinned at the bottom edge. Knobs are drawn over real range inputs, so
+  they drag, take the arrow keys and read as sliders to a screen reader.
+- **One search box, over everything at once (1.5).** With every pack added there
+  are 124 sounds on 16 pages and 20 scenes, too many to find by paging. Typing
+  narrows the pads (from every page, each labelled with its page), the sounds
+  offered as layers, the scenes on the shelf and the playlists together. "/"
+  finds, Enter plays the first pad, Escape clears; 1–9 play the pads in view
+  while nobody is typing. The Library has its own search over sounds, playlists
+  and scenes.
+- **Sounds are edited as cards, one at a time (1.5).** Rename, volume, page and
+  delete each go to the bar as one change (`sound.set`, `sound.add`), merged into
+  the library it holds, like reactions. The text editor stays, folded away under
+  "Paste many…", for pasting a collection at once.
 
 - **No Spotify (checked 2026-09-26).** Spotify's Developer Policy, section III, forbids
   what the radio does: "an application which plays content from a single source to
@@ -254,6 +273,14 @@ bar, and follows a real pop-up for the popped-out window.
 
 ## Releases
 
+- **1.5**: the redesign. A gramophone cabinet in mahogany, brass and ivory, laid
+  out as a record shelf: the platter with what is on, its layers as chips with
+  their own knobs, the scenes as record sleeves, and the soundboard as a drawer.
+  Search across pads, layers, scenes and playlists, with "/", Enter and 1–9. The
+  Library's sounds are a card catalogue: pages as drawers, each sound a card to
+  rename, turn up or down, hear, move or delete, and "Add a sound". The bar is
+  redrawn to match, with a turning record and a slim Tune in strip. Players get
+  the record and three knobs of their own.
 - **1.4**: the Dreams & Machines pack: 63 CC0 and CC BY files for a
   post-apocalyptic, machine-haunted world, ten scenes, and three playlists of GS
   Grimoire's own D&M music. The GS Grimoire music pack gains every public Free

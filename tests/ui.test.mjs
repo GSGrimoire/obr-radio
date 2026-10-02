@@ -258,6 +258,8 @@ async function routes(page) {
     if (!file.startsWith(path.join(repo, "sounds")) || !fs.existsSync(file)) { route.fulfill({ status: 404 }); return; }
     route.fulfill({ status: 200, contentType: "audio/ogg", body: fs.readFileSync(file), headers: { "Accept-Ranges": "bytes" } });
   });
+  // The typefaces come from Google Fonts in the real thing; here the fallbacks do.
+  await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.fulfill({ status: 200, contentType: "text/css", body: "" }));
   await page.route("https://cdn1.suno.ai/**", media);
   await page.route("https://files.test/**", media);
   await page.route("https://www.youtube.com/iframe_api", (r) => r.fulfill({ status: 200, contentType: "text/javascript", body: YT_STUB }));
@@ -1239,6 +1241,101 @@ const DNM = { threat: 0, momentum: 2, initiative: null, epochs: { breather: 0, b
   if (gmErrors.length || pErrors.length || cErrors.length) console.log("     ", gmErrors[0] || pErrors[0] || cErrors[0]);
   await ctx.close();
   await gm.close();
+}
+
+
+// -------------------------------------------------------------
+// 12. 1.5: the record shelf — search, keys, the drawer, the card catalogue
+// -------------------------------------------------------------
+{
+  const ctx = await browser.newContext({ viewport: { width: 520, height: 760 } });
+  const lib = { ...LIB, sounds: [...LIB.sounds,
+    { id: "s-rain", name: "Rain on tin", track: { k: "a", u: FILE("long-rain"), t: "Rain on tin" }, vol: 0.6, page: "Wastes" },
+    { id: "s-klax", name: "Klaxon", track: { k: "a", u: FILE("clip-klaxon"), t: "Klaxon" }, vol: 1, page: "Ruins" }],
+    scenes: [...LIB.scenes, { id: "rainy", name: "Ruined city in rain", music: { mode: "keep" }, amb: [{ track: { k: "a", u: FILE("long-rain"), t: "Rain on tin" }, vol: 0.6, label: "Rain on tin" }] }] };
+  const bar = await ctx.newPage();
+  const barErrors = await open(bar, { role: "GM", conn: "conn-gm", players: [], library: lib, meta: room(null) });
+  const con = await ctx.newPage();
+  const errors = await open(con, { file: "index.html", role: "GM", conn: "conn-gm", players: [] });
+  await con.waitForFunction(() => document.getElementById("c-conn").textContent.includes("GM"), null, { timeout: 5000 }).catch(() => {});
+
+  const padNames = () => con.$$eval("#c-board .pad", (n) => n.map((x) => x.textContent));
+  await con.fill("#c-search", "rain");
+  await sleep(200);
+  ok(`search: pads from every page narrow to the matches (${(await padNames()).join()})`, (await padNames()).join() === "Rain video,Rain on tin");
+  ok("search: the shelf narrows too", (await con.$$eval("#c-scenes .scene .sleeve-name", (n) => n.map((x) => x.textContent))).join() === "Ruined city in rain");
+  ok("search: and the sounds offered as layers", (await con.$$eval("#c-amb select >> nth=0 >> option", (n) => n.map((x) => x.textContent))).join("|") === "Choose a sound…|Rain video (video)|Rain on tin");
+  ok("search: a match shows its page", (await con.$$eval("#c-board .pad", (n) => n.map((x) => x.dataset.sub))).join() === "Coast,Wastes");
+  await con.fill("#c-search", "klax");
+  await con.press("#c-search", "Enter");
+  await sleep(300);
+  let snd = (await sent(bar)).filter((m) => m.data.type === "sound");
+  ok("search: Enter plays the first match for everyone", snd.length === 1 && snd[0].data.track.u === FILE("clip-klaxon"));
+  await con.press("#c-search", "Escape");
+  await sleep(200);
+  ok("search: Escape clears it", (await con.inputValue("#c-search")) === "" && (await padNames()).join() === "Sting,Crit");
+
+  await con.click("body", { position: { x: 5, y: 5 } });
+  await con.keyboard.press("2");
+  await sleep(300);
+  snd = (await sent(bar)).filter((m) => m.data.type === "sound");
+  ok("keys: 2 plays the second pad on the page", snd.length === 2 && snd[1].data.track.u === FILE("clip-crit"));
+  await con.keyboard.press("/");
+  ok("keys: / jumps to the search", await con.evaluate(() => document.activeElement.id === "c-search"));
+  await con.keyboard.type("3");
+  await sleep(200);
+  ok("keys: a number typed in the search is text, not a press", (await sent(bar)).filter((m) => m.data.type === "sound").length === 2);
+  await con.fill("#c-search", "");
+  await sleep(150);
+
+  await con.click("#c-board .toggle");
+  await sleep(300);
+  ok("drawer: it shuts to a handle", !(await con.isVisible("#c-board .pad")) && (await con.getAttribute("#c-board .toggle", "aria-expanded")) === "false");
+  ok("drawer: the handle stays in view at the bottom edge", await con.evaluate(() => getComputedStyle(document.getElementById("c-board")).position === "sticky"));
+  await con.click("#c-board .toggle");
+  await sleep(300);
+  ok("drawer: and opens again", (await padNames()).length === 2);
+
+  // The card catalogue in the library.
+  await con.click('button[data-tab="library"]');
+  await sleep(300);
+  await con.click("#c-sounds .drawer-front:has-text('Ruins')");
+  await sleep(200);
+  await con.fill("#c-sounds .sound-card input[aria-label=Name]", "Air-raid klaxon");
+  await con.press("#c-sounds .sound-card input[aria-label=Name]", "Enter");
+  await con.click("#c-lib-search");
+  await sleep(400);
+  let stored = await bar.evaluate((k) => JSON.parse(localStorage.getItem(k)), LIBRARY_KEY);
+  ok("cards: a sound is renamed in place", stored.sounds.find((x) => x.id === "s-klax").name === "Air-raid klaxon");
+  await con.evaluate(() => { const i = document.querySelector("#c-sounds .sound-card .knob input"); i.value = "40"; i.dispatchEvent(new Event("input")); i.dispatchEvent(new Event("change")); });
+  await sleep(400);
+  stored = await bar.evaluate((k) => JSON.parse(localStorage.getItem(k)), LIBRARY_KEY);
+  ok("cards: its own volume is turned on its knob", Math.abs(stored.sounds.find((x) => x.id === "s-klax").vol - 0.4) < 0.01);
+  await con.fill("#c-lib-search", "crit");
+  await sleep(300);
+  ok("library search: finds a sound on any page", (await con.$$eval("#c-sounds .sound-card input[aria-label=Name]", (n) => n.map((x) => x.value))).join() === "Crit");
+  await con.click("#c-sounds button[aria-label='More for Crit']");
+  await sleep(200);
+  await con.click("#c-sounds .sound-card button.danger");
+  await con.click("#c-sounds .sound-card button.danger:has-text('Sure?')");
+  await sleep(400);
+  stored = await bar.evaluate((k) => JSON.parse(localStorage.getItem(k)), LIBRARY_KEY);
+  ok("cards: a sound is deleted, after Sure?", !stored.sounds.some((x) => x.id === "s-crit") && !stored.reactions.rollCrit);
+  await con.fill("#c-lib-search", "");
+  await sleep(200);
+  await con.click("#c-sounds button:has-text('Add a sound')");
+  await sleep(200);
+  await con.fill("#c-sounds input[placeholder=Name]", "Gong");
+  await con.fill("#c-sounds input[placeholder^='Link']", "https://files.test/clip-gong.mp3");
+  await con.click("#c-sounds .card button.primary:has-text('Add')");
+  await sleep(400);
+  stored = await bar.evaluate((k) => JSON.parse(localStorage.getItem(k)), LIBRARY_KEY);
+  const gong = stored.sounds.find((x) => x.name === "Gong");
+  ok("cards: a sound is added from a link, onto the page in view", !!gong && gong.track.u === "https://files.test/clip-gong.mp3" && gong.page === "Ruins");
+  ok("cards: the text editor is still there, folded away", (await con.$$("#c-sounds details.bulk textarea")).length === 1 && !(await con.isVisible("#c-sounds details.bulk textarea")));
+  ok("redesign: nothing threw", errors.length === 0 && barErrors.length === 0);
+  if (errors.length || barErrors.length) console.log("     ", errors[0] || barErrors[0]);
+  await ctx.close();
 }
 
 await browser.close();

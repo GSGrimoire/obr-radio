@@ -544,7 +544,7 @@ const YT = (v) => ({ k: "yt", v, t: "video " + v });
 // The link's two routes (1.1C)
 // -------------------------------------------------------------
 {
-  ok("the new commands are known", ["scene.stop", "layer.pause", "lib.set", "react.set"].every((op) => OPS.has(op) && GM_ONLY.has(op)));
+  ok("the new commands are known", ["scene.stop", "layer.pause", "lib.set", "react.set", "sound.set", "sound.add"].every((op) => OPS.has(op) && GM_ONLY.has(op)));
   const m = stamp({ ns: NS, t: "hello" }, () => 0.5);
   ok("a message is stamped once", !!m.mid && stamp(m).mid === m.mid);
   ok("a small message travels whole", toPieces(m).length === 1 && toPieces(m)[0] === m);

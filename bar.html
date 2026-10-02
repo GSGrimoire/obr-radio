@@ -8,22 +8,25 @@
 </head>
 <body class="bar">
 <div class="bar-row">
+  <div id="record" class="record" aria-hidden="true"><div class="label"></div></div>
   <div class="now">
     <div id="title" class="now-title">Nothing playing</div>
     <div id="label" class="now-label"></div>
   </div>
   <div class="gm-only transport">
-    <button id="prev" title="Previous track" aria-label="Previous track">⏮</button>
-    <button id="toggle" title="Play or pause the music" aria-label="Play or pause">▶</button>
-    <button id="next" title="Next track" aria-label="Next track">⏭</button>
+    <button id="prev" class="brass round" title="Previous track" aria-label="Previous track"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5v14M19 6l-9 6 9 6z"/></svg></button>
+    <button id="toggle" class="brass round" title="Play or pause the music" aria-label="Play or pause"><svg class="i-play" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5l11 7-11 7z"/></svg><svg class="i-pause" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg></button>
+    <button id="next" class="brass round" title="Next track" aria-label="Next track"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 5v14M5 6l9 6-9 6z"/></svg></button>
   </div>
-  <button id="mute" class="ghost" title="Mute the radio, for you only" aria-label="Mute" aria-pressed="false">🔊</button>
-  <button id="popout" class="ghost gm-only-inline" title="Open the radio console in its own window" aria-label="Open console window">⧉</button>
-  <button id="move" class="ghost" title="Move to the next corner" aria-label="Move">⇲</button>
-  <button id="close" class="ghost" title="Close the radio (the sound stops for you)" aria-label="Close">×</button>
+  <div class="bar-tools">
+    <button id="mute" class="ghost" title="Mute the radio, for you only" aria-label="Mute" aria-pressed="false"><svg class="i-on" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M17 9a4 4 0 0 1 0 6"/></svg><svg class="i-off" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M17 9l5 6M22 9l-5 6"/></svg></button>
+    <button id="popout" class="ghost gm-only-inline" title="Open the radio console in its own window" aria-label="Open console window"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="12" height="12" rx="1"/><path d="M9 4h11v11"/></svg></button>
+    <button id="move" class="ghost" title="Move to the next corner" aria-label="Move"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7l10 10M17 9v8H9"/></svg></button>
+    <button id="close" class="ghost" title="Close the radio (the sound stops for you)" aria-label="Close"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
 </div>
-<div class="bar-row small">
-  <button id="tune" class="tune" title="Your browser needs one press before it will play sound">▶ Tune in</button>
+<div class="bar-foot">
+  <button id="tune" class="tune" title="Your browser needs one press before it will play sound">▶ Tune in — one press to hear the table</button>
   <span id="status" class="status" role="status"></span>
 </div>
 <div id="embeds" class="embeds"></div>

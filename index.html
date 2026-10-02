@@ -8,7 +8,7 @@
 </head>
 <body class="console">
 <header class="c-head">
-  <h1>Radio</h1>
+  <h1 class="plate">GS Grimoire Radio</h1>
   <span id="c-conn" class="pill">Connecting…</span>
   <span id="c-dnm" class="pill subtle" hidden>D&amp;M</span>
   <span class="spacer"></span>
@@ -32,31 +32,41 @@
 <main id="c-main">
   <!-- Everyone: what is playing, and your own volume -->
   <section id="c-me" class="card">
-    <div class="now-big">
-      <div id="c-now-title" class="now-title">Nothing playing</div>
-      <div id="c-now-sub" class="muted"></div>
+    <div class="me-now">
+      <div id="c-me-record" class="record" aria-hidden="true"><div class="label"></div></div>
+      <div>
+        <div class="muted small">Now playing</div>
+        <div id="c-now-title" class="now-title">Nothing playing</div>
+        <div id="c-now-sub" class="muted"></div>
+      </div>
     </div>
     <div class="sliders">
-      <label>Music <input type="range" id="c-v-music" min="0" max="100"></label>
-      <label>Ambience <input type="range" id="c-v-amb" min="0" max="100"></label>
-      <label>Sounds <input type="range" id="c-v-fx" min="0" max="100"></label>
-      <button id="c-mute" class="ghost" aria-pressed="false">Mute</button>
+      <span class="sec-title" style="margin:0">Your volume</span>
+      <span class="kn"><span class="knob" data-knob><svg width="52" height="52" viewBox="0 0 56 56" aria-hidden="true"><path d="M9.6 46.4 A26 26 0 1 1 46.4 46.4" fill="none" stroke="#e8dcbf" stroke-width="2" stroke-dasharray="1.5 4.2"/><circle cx="28" cy="28" r="20" fill="#2a120c" stroke="#6b4c1c" stroke-width="1.5"/><circle class="cap" cx="28" cy="28" r="16" fill="#b8903f" stroke="#6b4c1c"/><circle cx="24" cy="23" r="6" fill="#f2d88f" opacity=".35"/><g class="pointer"><line x1="28" y1="27" x2="28" y2="14" stroke="#22110b" stroke-width="3" stroke-linecap="round"/></g></svg><input type="range" id="c-v-music" min="0" max="100" aria-label="Music, for you"></span>Music</span>
+      <span class="kn"><span class="knob" data-knob><svg width="52" height="52" viewBox="0 0 56 56" aria-hidden="true"><path d="M9.6 46.4 A26 26 0 1 1 46.4 46.4" fill="none" stroke="#e8dcbf" stroke-width="2" stroke-dasharray="1.5 4.2"/><circle cx="28" cy="28" r="20" fill="#2a120c" stroke="#6b4c1c" stroke-width="1.5"/><circle class="cap" cx="28" cy="28" r="16" fill="#b8903f" stroke="#6b4c1c"/><circle cx="24" cy="23" r="6" fill="#f2d88f" opacity=".35"/><g class="pointer"><line x1="28" y1="27" x2="28" y2="14" stroke="#22110b" stroke-width="3" stroke-linecap="round"/></g></svg><input type="range" id="c-v-amb" min="0" max="100" aria-label="Ambience, for you"></span>Ambience</span>
+      <span class="kn"><span class="knob" data-knob><svg width="52" height="52" viewBox="0 0 56 56" aria-hidden="true"><path d="M9.6 46.4 A26 26 0 1 1 46.4 46.4" fill="none" stroke="#e8dcbf" stroke-width="2" stroke-dasharray="1.5 4.2"/><circle cx="28" cy="28" r="20" fill="#2a120c" stroke="#6b4c1c" stroke-width="1.5"/><circle class="cap" cx="28" cy="28" r="16" fill="#b8903f" stroke="#6b4c1c"/><circle cx="24" cy="23" r="6" fill="#f2d88f" opacity=".35"/><g class="pointer"><line x1="28" y1="27" x2="28" y2="14" stroke="#22110b" stroke-width="3" stroke-linecap="round"/></g></svg><input type="range" id="c-v-fx" min="0" max="100" aria-label="Sounds, for you"></span>Sounds</span>
+      <button id="c-mute" class="mute-switch" aria-pressed="false"><span>Mute</span><span class="track"><span class="lever"></span></span></button>
     </div>
-    <p class="muted small">Your volume, for you only. The sound plays in the radio bar at the edge of the map — keep it open.</p>
+    <p class="muted small me-note">Your volume, for you only. Drag across a knob, or use the arrow keys. The sound plays in the radio bar at the edge of the map — keep it open.</p>
   </section>
 
   <div class="tab" data-panel="play">
-    <div class="grid2">
-      <section class="card" id="c-music"></section>
-      <section class="card" id="c-amb"></section>
+    <div class="search" id="c-searchbar">
+      <input type="search" id="c-search" placeholder="Find a sound, a layer or a scene" aria-label="Find a sound, a layer or a scene" autocomplete="off">
+      <span class="hint">/ to search · Enter plays</span>
     </div>
-    <section class="card" id="c-scenes"></section>
-    <section class="card" id="c-board"></section>
+    <section class="well platter" id="c-music"></section>
+    <section class="channels" id="c-amb"></section>
+    <section class="shelf" id="c-scenes"></section>
+    <section class="drawer" id="c-board"></section>
     <!-- Players: the pads the GM opened to them -->
     <section class="card" id="c-ppads" hidden></section>
   </div>
 
   <div class="tab" data-panel="library" hidden>
+    <div class="lib-search">
+      <input type="search" id="c-lib-search" placeholder="Find in your library" aria-label="Find in your library" autocomplete="off">
+    </div>
     <section class="card" id="c-packs"></section>
     <section class="card" id="c-lists"></section>
     <section class="card" id="c-sounds"></section>

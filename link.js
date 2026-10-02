@@ -37,6 +37,8 @@ export const OPS = new Set([
   // the bar merges into the library it holds: two quick changes built from the
   // same stale copy would otherwise undo each other.
   "lib.put", "lib.set", "react.set",
+  // One sound in the library changed, removed or added (the Library's cards).
+  "sound.set", "sound.add",
 ]);
 
 export const GM_ONLY = new Set([...OPS].filter((op) => !["prefs.set", "sound.preview", "pad.press"].includes(op)));
