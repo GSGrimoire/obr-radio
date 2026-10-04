@@ -233,42 +233,43 @@ export const PACKS = [
     blurb: "GS Grimoire's own music: every public Free Song Sunday track from Suno, the YouTube playlist, and Liquid Banjo.",
     lists: [
       { name: "Free Song Sunday", tracks: [
-      "The Hollow Requiem - Eerie TTRPG Ambience | https://suno.com/song/0d7d1bc0-3622-421c-9c1c-2d854eebcbae | GS Grimoire",
-      "Hag's Ethereal Assault | https://suno.com/song/ee2c8bfb-08e5-4e58-8439-7fc6e7087af5 | GS Grimoire",
-      "Sands of Night | https://suno.com/song/1ef08130-e7b7-4d7e-8170-919858e40d98 | GS Grimoire",
-      "Sigh of the Locket - Mysterious TTRPG Ambience | https://suno.com/song/c292dc67-e62c-4938-b26e-db7c698e7b9b | GS Grimoire",
-      "The Hero's Last Journey | https://suno.com/song/409d426f-c6e5-44f9-8546-a926be44e9c6 | GS Grimoire",
-      "Hearthside Tales | https://suno.com/song/6cf18b66-579c-4d7e-a0b2-41401c2cef8d | GS Grimoire",
-      "Dust Shimmers - TTRPG Ambience for a western feel. | https://suno.com/song/162d5b4f-a0e7-4114-9dab-50062d4f5d9d | GS Grimoire",
-      "Blades and Glory | https://suno.com/song/95cd321c-f686-4879-b804-dcf214b39935 | GS Grimoire",
-      "Blades and Glory UnEpic | https://suno.com/song/63682e3a-8cc5-49ed-a100-1a3241f7d8ed | GS Grimoire",
-      "Shadows and Silver | https://suno.com/song/3cff225b-76f9-4a58-99a6-74cb6a449e21 | GS Grimoire",
-      "Hull Breach Protocol | https://suno.com/song/f3c3a231-689b-4481-9001-82b68583de75 | GS Grimoire",
-      "Never let the mask slip | https://suno.com/song/eae39ca1-fdec-4b41-b9eb-d7ffccda5f6e | GS Grimoire",
-      "The Cauldrons Whisper | https://suno.com/song/70017800-b956-4952-bc5b-b063b1ea711d | GS Grimoire",
-      "Harbor's Call | https://suno.com/song/d7cf847d-c2e5-4cc6-85fe-183efb3a1444 | GS Grimoire",
-      "Thunder and Stone 2.5 | https://suno.com/song/44ea3eb8-36dd-443e-ae96-c335c3377b6e | GS Grimoire",
-      "Brewing Alchemy (Free) | https://suno.com/song/68d8563c-8f9b-4305-84b8-a6e7241474b2 | GS Grimoire",
-      "What Waits Beneath The Banjo tree | https://suno.com/song/c6a7451a-cc05-4d4b-8e3b-6824d540f2c9 | GS Grimoire",
-      "Magic place | https://suno.com/song/bb4bc5df-8e84-4d8e-8f36-0c13248153bf | GS Grimoire",
-      "Dead marsh ambient track | https://suno.com/song/bf46732c-541f-4fd4-82ee-86fbe0a48063 | GS Grimoire",
-      "Fight Against Time | https://suno.com/song/e16550ee-b0ad-432c-82fe-98b26c3765a1 | GS Grimoire",
-      "MISSION IMPOSSIBLE STYLE HEIST TRACK | https://suno.com/song/8b899079-3255-41bc-b162-d89584c83307 | GS Grimoire",
-      "Veilwing | https://suno.com/song/931921c2-b21b-41ce-90cf-1de0a63828d4 | GS Grimoire",
-      "Sadness | https://suno.com/song/303a3136-6cbf-4d49-b7d7-ba7c4d32429d | GS Grimoire",
-      "Brass Thimble - TTRPG fey ambience | https://suno.com/song/2ed42e81-34eb-413d-87b8-5504899e77a5 | GS Grimoire",
-      "Wings of Living Light | https://suno.com/song/43feb13c-0934-4e45-9a50-e0ae058932f0 | GS Grimoire",
-      "The Light Is Not For You (Edit) | https://suno.com/song/9a411016-fc6a-4932-bc13-4f75fcc6ca65 | GS Grimoire",
-      "Dhampir Sermon Emo Version | https://suno.com/song/26b85f3b-ec1c-4f3d-a293-d445a1258e10 | GS Grimoire",
-      "On the brink of Adventure - TTRPG Ambience | https://suno.com/song/c452caa9-e019-4e61-abaf-569a6d00bad4 | GS Grimoire",
-      "Grave-Sprite Bells | https://suno.com/song/382eaf9e-dbbd-4dbb-a101-7bc3c1b24697 | GS Grimoire",
-      "The Quiet Tavern - TTRPG Ambience | https://suno.com/song/7816d768-1e85-4fbc-a667-9354115c4172 | GS Grimoire",
-      "Storm on the Horizon - TTRPG Combat Ambience | https://suno.com/song/1c1f1355-33e5-444c-b5c4-6a2a379d508f | GS Grimoire",
-      "The Hush of the Deep Woods | https://suno.com/song/a3f0ed90-1aaf-4df7-883a-033c5cc48ee6 | GS Grimoire",
-      "Ice Cold Shaman | https://suno.com/song/c98c7c1b-e0e7-400d-ae05-49d475e2578e | GS Grimoire",
-      "Echoes in the Void | https://suno.com/song/333674b7-a458-4e9f-96b5-c7071da10531 | GS Grimoire",
-      "Shadows of the Lost | https://suno.com/song/18e2dc11-c07c-42e2-9938-3866a39ef34b | GS Grimoire",
-      "Liminal Echoes | https://suno.com/song/945a6b8f-6a0a-4385-a5e8-05ad20a2b6f3 | GS Grimoire",
+        "The Hollow Requiem - Eerie TTRPG Ambience | https://suno.com/song/0d7d1bc0-3622-421c-9c1c-2d854eebcbae | GS Grimoire",
+        "Hag's Ethereal Assault | https://suno.com/song/ee2c8bfb-08e5-4e58-8439-7fc6e7087af5 | GS Grimoire",
+        "Sands of Night | https://suno.com/song/1ef08130-e7b7-4d7e-8170-919858e40d98 | GS Grimoire",
+        "Sigh of the Locket - Mysterious TTRPG Ambience | https://suno.com/song/c292dc67-e62c-4938-b26e-db7c698e7b9b | GS Grimoire",
+        "The Hero's Last Journey | https://suno.com/song/409d426f-c6e5-44f9-8546-a926be44e9c6 | GS Grimoire",
+        "Hearthside Tales | https://suno.com/song/6cf18b66-579c-4d7e-a0b2-41401c2cef8d | GS Grimoire",
+        "Dust Shimmers - TTRPG Ambience for a western feel. | https://suno.com/song/162d5b4f-a0e7-4114-9dab-50062d4f5d9d | GS Grimoire",
+        "Blades and Glory | https://suno.com/song/95cd321c-f686-4879-b804-dcf214b39935 | GS Grimoire",
+        "Blades and Glory UnEpic | https://suno.com/song/63682e3a-8cc5-49ed-a100-1a3241f7d8ed | GS Grimoire",
+        "Shadows and Silver | https://suno.com/song/3cff225b-76f9-4a58-99a6-74cb6a449e21 | GS Grimoire",
+        "Hull Breach Protocol | https://suno.com/song/f3c3a231-689b-4481-9001-82b68583de75 | GS Grimoire",
+        "Never let the mask slip | https://suno.com/song/eae39ca1-fdec-4b41-b9eb-d7ffccda5f6e | GS Grimoire",
+        "The Cauldrons Whisper | https://suno.com/song/70017800-b956-4952-bc5b-b063b1ea711d | GS Grimoire",
+        "Harbor's Call | https://suno.com/song/d7cf847d-c2e5-4cc6-85fe-183efb3a1444 | GS Grimoire",
+        "Thunder and Stone 2.5 | https://suno.com/song/44ea3eb8-36dd-443e-ae96-c335c3377b6e | GS Grimoire",
+        "Brewing Alchemy (Free) | https://suno.com/song/68d8563c-8f9b-4305-84b8-a6e7241474b2 | GS Grimoire",
+        "What Waits Beneath The Banjo tree | https://suno.com/song/c6a7451a-cc05-4d4b-8e3b-6824d540f2c9 | GS Grimoire",
+        "Magic place | https://suno.com/song/bb4bc5df-8e84-4d8e-8f36-0c13248153bf | GS Grimoire",
+        "Dead marsh ambient track | https://suno.com/song/bf46732c-541f-4fd4-82ee-86fbe0a48063 | GS Grimoire",
+        "Fight Against Time | https://suno.com/song/e16550ee-b0ad-432c-82fe-98b26c3765a1 | GS Grimoire",
+        "MISSION IMPOSSIBLE STYLE HEIST TRACK | https://suno.com/song/8b899079-3255-41bc-b162-d89584c83307 | GS Grimoire",
+        "Veilwing | https://suno.com/song/931921c2-b21b-41ce-90cf-1de0a63828d4 | GS Grimoire",
+        "Sadness | https://suno.com/song/303a3136-6cbf-4d49-b7d7-ba7c4d32429d | GS Grimoire",
+        "Brass Thimble - TTRPG fey ambience | https://suno.com/song/2ed42e81-34eb-413d-87b8-5504899e77a5 | GS Grimoire",
+        "Wings of Living Light | https://suno.com/song/43feb13c-0934-4e45-9a50-e0ae058932f0 | GS Grimoire",
+        "The Light Is Not For You (Edit) | https://suno.com/song/9a411016-fc6a-4932-bc13-4f75fcc6ca65 | GS Grimoire",
+        "Dhampir Sermon Emo Version | https://suno.com/song/26b85f3b-ec1c-4f3d-a293-d445a1258e10 | GS Grimoire",
+        "On the brink of Adventure - TTRPG Ambience | https://suno.com/song/c452caa9-e019-4e61-abaf-569a6d00bad4 | GS Grimoire",
+        "Grave-Sprite Bells | https://suno.com/song/382eaf9e-dbbd-4dbb-a101-7bc3c1b24697 | GS Grimoire",
+        "The Quiet Tavern - TTRPG Ambience | https://suno.com/song/7816d768-1e85-4fbc-a667-9354115c4172 | GS Grimoire",
+        "Storm on the Horizon - TTRPG Combat Ambience | https://suno.com/song/1c1f1355-33e5-444c-b5c4-6a2a379d508f | GS Grimoire",
+        "The Hush of the Deep Woods | https://suno.com/song/a3f0ed90-1aaf-4df7-883a-033c5cc48ee6 | GS Grimoire",
+        "Ice Cold Shaman | https://suno.com/song/c98c7c1b-e0e7-400d-ae05-49d475e2578e | GS Grimoire",
+        "Echoes in the Void | https://suno.com/song/333674b7-a458-4e9f-96b5-c7071da10531 | GS Grimoire",
+        "Shadows of the Lost | https://suno.com/song/18e2dc11-c07c-42e2-9938-3866a39ef34b | GS Grimoire",
+        "Liminal Echoes | https://suno.com/song/945a6b8f-6a0a-4385-a5e8-05ad20a2b6f3 | GS Grimoire",
+        "Dust and Green Fields - TTRPG Ambience for Dungeons and Dragons | https://suno.com/song/fc9f97bf-711f-4935-bb7a-ed3422b22827 | GS Grimoire",
       ] },
       { name: "GS Grimoire free songs", tracks: [
         "GS Grimoire Free Song Sunday | https://youtube.com/playlist?list=PLRy5AGzKZLmE | GS Grimoire",
@@ -319,6 +320,15 @@ function trackFor(sound, base) {
 
 const allSounds = () => PACKS.flatMap((p) => p.sounds || []);
 
+function packTracks(l) {
+  return l.tracks.map((line) => {
+    const [title, link] = splitListLine(line);
+    const found = parseLink(link);
+    if (!found.track) throw new Error(`pack list "${l.name}": ${found.error}`);
+    return title ? { ...found.track, t: title } : found.track;
+  });
+}
+
 // Adds a pack to a library and returns { lib, added: { sounds, lists, scenes,
 // reactions }, skipped }. Nothing the GM already has is replaced:
 //   · a sound whose link is already in the library is not added twice
@@ -343,13 +353,18 @@ export function addPack(lib, packId, { base = PACK_BASE, rand = Math.random } = 
   }
 
   for (const l of pack.lists || []) {
-    if (next.lists.some((x) => x.name === l.name)) { skipped += 1; continue; }
-    const tracks = l.tracks.map((line) => {
-      const [title, link] = splitListLine(line);
-      const found = parseLink(link);
-      if (!found.track) throw new Error(`pack list "${l.name}": ${found.error}`);
-      return title ? { ...found.track, t: title } : found.track;
-    });
+    const tracks = packTracks(l);
+    // A playlist of the same name is the GM's: nothing in it is removed or moved.
+    // Songs the pack has gained since (a new Free Song Sunday) are added at its end.
+    const mine = next.lists.find((x) => x.name === l.name);
+    if (mine) {
+      const have = new Set(mine.tracks.map((t) => trackKey(t)));
+      const missing = tracks.filter((t) => !have.has(trackKey(t)));
+      if (!missing.length) { skipped += 1; continue; }
+      mine.tracks = [...mine.tracks, ...missing];
+      added.tracks = (added.tracks || 0) + missing.length;
+      continue;
+    }
     next.lists.push({ id: newId("l", rand), name: l.name, tracks });
     added.lists += 1;
   }
@@ -385,7 +400,14 @@ export function packInstalled(lib, packId, base = PACK_BASE) {
   if (!pack) return false;
   const keys = new Set(lib.sounds.map((s) => trackKey(s.track)));
   const soundsIn = (pack.sounds || []).every((s) => keys.has(trackKey(trackFor(s, base))));
-  const listsIn = (pack.lists || []).every((l) => lib.lists.some((x) => x.name === l.name));
+  // A playlist counts as in only when it has every song the pack now has, so a new
+  // song brings the Add button back.
+  const listsIn = (pack.lists || []).every((l) => {
+    const mine = lib.lists.find((x) => x.name === l.name);
+    if (!mine) return false;
+    const have = new Set(mine.tracks.map((t) => trackKey(t)));
+    return packTracks(l).every((t) => have.has(trackKey(t)));
+  });
   const scenesIn = (pack.scenes || []).every((sc) => lib.scenes.some((x) => x.name === sc.name));
   return soundsIn && listsIn && scenesIn;
 }

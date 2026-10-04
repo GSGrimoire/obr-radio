@@ -543,6 +543,7 @@ function renderPacks() {
       if (res.error) return;
       const a = r.added;
       const got = [a.sounds && plural(a.sounds, "sound", "sounds"), a.lists && plural(a.lists, "playlist", "playlists"),
+        a.tracks && plural(a.tracks, "new song", "new songs"),
         a.scenes && plural(a.scenes, "scene", "scenes"), a.reactions && plural(a.reactions, "reaction", "reactions")].filter(Boolean);
       toast(got.length ? `Added ${got.join(", ")}.` : "You already had all of it.");
     };

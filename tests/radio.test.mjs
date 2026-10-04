@@ -511,6 +511,16 @@ const YT = (v) => ({ k: "yt", v, t: "video " + v });
 
   const again = PACKS.reduce((l, p) => addPack(l, p.id).lib, lib);
   ok("adding the packs again changes nothing", JSON.stringify(again) === JSON.stringify(lib));
+  // 1.5.1: a pack's playlist that has gained a song since it was added.
+  const fssName = "Free Song Sunday";
+  const older = readLibrary({ ...lib, lists: lib.lists.map((l) => (l.name === fssName
+    ? { ...l, tracks: [{ k: "a", u: "https://x.test/mine.mp3", t: "My own" }, ...l.tracks.slice(1)] } : l)) });
+  ok("a pack whose playlist gained a song offers Add again", !packInstalled(older, "music"));
+  const caught = addPack(older, "music").lib.lists.find((l) => l.name === fssName);
+  ok("adding it again appends the missing song, keeping the GM's own", caught.tracks[0].t === "My own"
+    && caught.tracks.length === lib.lists.find((l) => l.name === fssName).tracks.length + 1
+    && caught.tracks.at(-1).u === lib.lists.find((l) => l.name === fssName).tracks[0].u);
+  ok("and then counts as added", packInstalled(addPack(older, "music").lib, "music"));
 
   const mine = readLibrary({ v: 2, sounds: [{ id: "mine", name: "My sting", track: { k: "a", u: "https://x.test/me.mp3" } }],
     reactions: { rollCrit: { sound: "mine" } }, scenes: [{ id: "t", name: "Tavern", music: { mode: "keep" }, amb: [] }] });
