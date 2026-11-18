@@ -1,5 +1,7 @@
 # GS Grimoire Radio
 
+<p><img src="brand/full-logo-512.png" width="140" height="140" alt="GS Grimoire Radio logo"></p>
+
 An Owlbear Rodeo extension for the whole table's sound: music, ambience layers under
 it, and a soundboard over it. Everything streams from where it already lives —
 YouTube, Suno, SoundCloud, Dropbox, any audio link — mixed freely in one playlist.
@@ -10,7 +12,7 @@ a scene for initiative (and the music it interrupted, back afterwards), a sting 
 Threat rises, a sound for a critical or a complication. Without D&M it is a complete
 radio on its own.
 
-Version **1.5.1**. Played once in a real room (1.1B); what that found is fixed in 1.2. See *Live checks* below.
+Version **1.5.2**. Played once in a real room (1.1B); what that found is fixed in 1.2. See *Live checks* below.
 
 **Install:** in Owlbear, add `https://gsgrimoire.github.io/obr-radio/manifest.json`.
 
@@ -273,6 +275,9 @@ bar, and follows a real pop-up for the popped-out window.
 
 ## Releases
 
+- **1.5.2**: the GS Grimoire Radio icon from the Twin Orbs family. It shows in
+  Owlbear's extension list and as the browser-tab icon of the popped-out
+  console and the other pages. The toolbar button keeps its line icon.
 - **1.5.1**: "Dust and Green Fields" joins the Free Song Sunday list. A pack's
   playlist that has gained songs since it was added brings its Add button back,
   and adding it appends just the new songs to your copy, leaving the rest of it
